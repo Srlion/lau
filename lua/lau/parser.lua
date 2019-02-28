@@ -73,8 +73,79 @@ local function expr_bracket(ast, ls)
     return v
 end
 
+-- ADDED PARSING METHODS
+local function get_arrow_function(ast, ls, line, force) -- check if current token is arrow function and return parameters or return false
+    local reset = ls:fake_llex()
+    local args, vararg
+    if (ls.previousToken != "(" && ls.token == "TK_name") then
+        local val = ls.tokenval
+        ls:next()
+        if (ls.token == "TK_ar") then
+            args, vararg = {val}, false
+        else
+            args = false
+        end
+    else
+        args, vararg = parse_params(ast, ls, nil, !force)
+    end
+    if (args == false || ls.token != "TK_ar") then
+        if (force) then
+            err_token(ls, "TK_ar")
+        end
+        reset()
+        return false
+    else
+        ls:next()
+        local body
+        if (lex_opt(ls, "{")) then
+            body = parse_block(ast, ls, line)
+            lex_match(ls, "}", "TK_ar", line)
+        else
+            body = {ast:return_stmt({(expr(ast, ls))}, line)}
+            if (!ls.IsInFunctionCall && !ls.IsInTable && ls.previousToken != ";" && ls.token != "TK_eof" && ls.space:match("\n") == nil) then
+                lex_check(ls, ";")
+            end
+        end
+        return {body = body, args = ast:func_parameters_decl(args, vararg), firstline = line, lastline = ls.linenumber}
+    end
+end
+
 local function parse_functionMember(ast, ls, line)
     return ast:expr_function(parse_body(ast, ls, ls.linenumber, false))
+end
+
+local function parse_PrefixExpressionInParens(ast, ls)
+    lex_check(ls, "(")
+    return ast:expr_brackets(expr(ast, ls)), lex_check(ls, ")")
+end
+
+local function parseBodyOrTillSemicolon(ast, ls, line, who)
+    if (lex_opt(ls, "{")) then
+        return parse_block(ast, ls, line), lex_match(ls, "}", who, line)
+    else
+        local stmt, _ = parse_stmt(ast, ls)
+        local body = {stmt}
+        body = ast:chunk(body, ls.chunkname, 0, 3)
+        return {body}, (ls.previousToken != ";" && ls.token != "TK_eof" && ls.space:match("\n") == nil) && lex_check(ls, ";")
+    end
+end
+
+local function parse_async_func(ast, ls, line, islocal)
+    ls:next()
+    if (ls.token != "TK_function") then
+        err_token(ls, "TK_function")
+    end
+    local func = parse_func(ast, ls, line)
+    local func_expr = ast:expr_function(func.params, func.body, {
+        varargs     = func.vararg,
+        firstline   = func.firstline,
+        lastline    = func.lastline
+    })
+    if (islocal) then
+        return ast:local_decl({func.id.name}, {ast:expr_async_function(func_expr, line)}, line)
+    else
+        return ast:assignment_expr({func.id}, {ast:expr_async_function(func_expr, line)}, line)
+    end
 end
 
 function expr_table(ast, ls)
@@ -137,20 +208,6 @@ function expr_array(ast, ls)
     end
     lex_match(ls, "]", "[", line)
     return ast:expr_function_call(ast:identifier("newArray"), {ast:expr_table(kvs, line)}, line)
-    -- return ast:new_statement_expr(ast:expr_method_call(ast:identifier("Array"), "new", ast:expr_table(kvs, line), line), line)
-    -- return ast:expr_function_call(ast:identifier("setmetatable"), {ast:expr_table(kvs, line), ast:expr_table({{ast:literal("true", line), ast:literal("__isarray", line)}}, line)}, line)
-end
-
-local function parse_arrow_function(ast, ls)
-    ls:next()
-    local line = ls.linenumber
-    if (lex_opt(ls, "{")) then
-        local body = parse_block(ast, ls)
-        lex_match(ls, "}", "{", line)
-        return ast:expr_function({}, body, {varargs = false, firstline = line, lastline = ls.linenumber})
-    else
-        print(expr(ast, ls))
-    end
 end
 
 function expr_simple(ast, ls)
@@ -177,9 +234,17 @@ function expr_simple(ast, ls)
         return expr_table(ast, ls)
     elseif tk == "TK_async" then
         ls:next()
-        lex_match(ls, "TK_function", "TK_async", ls.linenumber)
-        local line = ls.linenumber
-        local arg = ast:expr_function(parse_body(ast, ls, line, false))
+        local line, arg
+        if (ls.token == "(") then
+            line = ls.linenumber
+            ls:next()
+            local v = get_arrow_function(ast, ls, line, true)
+            arg = ast:expr_function(v.args, v.body, v)
+        else
+            lex_match(ls, "TK_function", "TK_async", ls.linenumber)
+            line = ls.linenumber
+            arg = ast:expr_function(parse_body(ast, ls, line, false))
+        end
         return ast:expr_async_function(arg, line)
     elseif tk == "TK_function" then
         ls:next()
@@ -188,20 +253,7 @@ function expr_simple(ast, ls)
     else
         local vk, v = expr_primary(ast, ls)
         if (v == "arrowFunction") then
-            local line = ls.linenumber
-            ls:next()
-            local body
-            if (lex_opt(ls, "{")) then
-                body = parse_block(ast, ls, line)
-                lex_match(ls, "}", "TK_ar", line)
-            else
-                body = {ast:return_stmt({(expr(ast, ls))}, line)}
-                if (!ls.IsInTable && ls.previousToken != ";" && ls.token != "TK_eof" && ls.space:match("\n") == nil) then
-                    lex_check(ls, ";")
-                end
-            end
-            local proto = {firstline = line, lastline = ls.linenumber}
-            return ast:expr_function(vk, body, proto)
+            return ast:expr_function(vk.args, vk.body, vk)
         end
         return vk, v
     end
@@ -259,16 +311,21 @@ function expr_primary(ast, ls)
     if ls.token == "(" then
         local line = ls.linenumber
         ls:next()
-        local reset = ls:fake_llex()
-        local args, vararg = parse_params(ast, ls, nil, true)
-        if (args == false || ls.token != "TK_ar") then
-            reset()
+        local args = get_arrow_function(ast, ls, line)
+        if (args) then
+            vk, v = "arrowFunction", args
+        else
             vk, v = "expr", ast:expr_brackets(expr(ast, ls))
             lex_match(ls, ')', '(', line)
-        else
-            vk, v = "arrowFunction", ast:func_parameters_decl(args, vararg)
         end
-    elseif ls.token == "TK_name" || ls.token == "TK_goto" then
+    elseif ls.token == "TK_name" then
+        local args = get_arrow_function(ast, ls, line)
+        if (args) then
+            vk, v = "arrowFunction", args
+        else
+            vk, v = "var", var_lookup(ast, ls)
+        end
+    elseif ls.token == "TK_goto" then
         vk, v = "var", var_lookup(ast, ls)
     else
         err_syntax(ls, "unexpected symbol")
@@ -286,30 +343,15 @@ function expr_primary(ast, ls)
             local args = parse_args(ast, ls)
             vk, v = "call", ast:expr_method_call(v, key, args, line)
         elseif ls.token == "(" || ls.token == "TK_string" || ls.token == "{" then
+            ls.IsInFunctionCall = true
             local args = parse_args(ast, ls)
+            ls.IsInFunctionCall = nil
             vk, v = "call", ast:expr_function_call(v, args, line)
         else
             break
         end
     end
     return v, vk
-end
-
--- Parse statements ----------------------------------------------------
-local function parse_PrefixExpressionInParens(ast, ls)
-    lex_check(ls, "(")
-    return ast:expr_brackets(expr(ast, ls)), lex_check(ls, ")")
-end
-
-local function parseBodyOrTillSemicolon(ast, ls, line, who)
-    if (lex_opt(ls, "{")) then
-        return parse_block(ast, ls, line), lex_match(ls, "}", who, line)
-    else
-        local stmt, _ = parse_stmt(ast, ls)
-        local body = {stmt}
-        body = ast:chunk(body, ls.chunkname, 0, 3)
-        return {body}, (ls.previousToken != ";" && ls.token != "TK_eof" && ls.space:match("\n") == nil) && lex_check(ls, ";")
-    end
 end
 
 -- Parse 'return' statement.
@@ -435,7 +477,9 @@ end
 -- Parse 'local' statement.
 local function parse_local(ast, ls)
     local line = ls.linenumber
-    if lex_opt(ls, 'TK_function') then -- Local function declaration.
+    if ls.token == "TK_async" then
+        return ( parse_async_func(ast, ls, line, true))
+    elseif lex_opt(ls, 'TK_function') then -- Local function declaration.
         local name = lex_str(ls)
         local args, body, proto = parse_body(ast, ls, line, false)
         return ast:local_function_decl(name, args, body, proto)
@@ -468,20 +512,6 @@ function parse_func(ast, ls, line)
     end
     local args, body, proto = parse_body(ast, ls, line, needself)
     return ast:function_decl(v, args, body, proto)
-end
-
-local function parse_async_func(ast, ls, line)
-    ls:next()
-    if (ls.token != "TK_function") then
-        err_token(ls, "TK_function")
-    end
-    local func = parse_func(ast, ls, line)
-    local func_expr = ast:expr_function(func.params, func.body, {
-        varargs     = func.vararg,
-        firstline   = func.firstline,
-        lastline    = func.lastline
-    })
-    return ast:assignment_expr({func.id}, {ast:expr_async_function(func_expr, line)}, line)
 end
 
 local function parse_while(ast, ls, line)
@@ -596,7 +626,7 @@ function parse_stmt(ast, ls)
 end
 
 function parse_params(ast, ls, needself, no_check)
-    if (!no_check) then
+    if (no_check == nil) then
         lex_check(ls, "(")
     end
     local args = { }

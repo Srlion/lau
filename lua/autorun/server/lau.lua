@@ -2,6 +2,7 @@ if _G[debug.getinfo(1).short_src] then return end _G[debug.getinfo(1).short_src]
 
 lau = {}
 
+include("lau/modules/array.lua")
 local parse = include("lau/parser.lua")
 local lex_setup = include("lau/lexer.lua")
 local generator = include("lau/generator.lua")
@@ -51,60 +52,8 @@ end
 print("\n\n\n\n\n\n\n\n\n\n\n-----------------------------------")
 local ast = lau.compile("test.js", "LUA")
 -- local ast = lau.compile_string("let s = ss")
--- PrintType(ast)
+PrintType(ast)
 
-local table = table
-local remove = table.remove
-local insert = table.insert
-local maxn = table.maxn
-local getmetatable = getmetatable
-
-local Array = {}
-
-function Array.isArray(t)
-    return getmetatable(t).__isarray && true || false
-end
-
-function Array.push(t, ...)
-    local args = {...}
-    for i = 1, select("#", ...) do
-        insert(t, i, args[i])
-    end
-    return #t
-end
-
-function Array.pop(t)
-    return remove(t)
-end
-
-function Array.shift(t)
-    return remove(t, 1)
-end
-
-function Array.unshift(t, v)
-    return insert(t, 1, v)
-end
-
-function Array.indexOf(t, v)
-    for i = 1, maxn(t) do
-        if (v == t[i]) then
-            return i
-        end
-    end
-    return -1
-end
-
-local e = {}
-Array.push(e, 1, nil, 3)
-PrintType(Array.indexOf(e, nil))
-
-do
-    local setmetatable = setmetatable
-    local __isarray = {__isarray = true}
-    function newArray(tbl)
-        return setmetatable(tbl, __isarray)
-    end
-end
 
 -- local function startBench()
 --     local bench = include("bench.lua")
