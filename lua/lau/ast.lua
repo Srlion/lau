@@ -224,8 +224,13 @@ function AST.goto_stmt(ast, name, line)
 end
 
 function AST.var_declare(ast, name)
-    local id = ident(name)
-    ast.variables:declare(name)
+    local id
+    if (istable(name)) then
+        id = ident(name.name)
+        id.default_value = name.default_value
+    else
+        id = ident(name)
+    end
     return id
 end
 

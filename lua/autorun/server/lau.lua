@@ -37,7 +37,7 @@ function lau.compile(fileName, path)
     local ls = lex_setup(new_file_reader(fileName, path), fileName)
     local ast_builder = lua_ast.New()
     local ast_tree = parse(ast_builder, ls)
-    local lua_code = generator(ast_tree, fileName)
+    local lua_code = generator(ast_tree, ast_builder, fileName)
     return lua_code
 end
 
@@ -45,15 +45,16 @@ function lau.compile_string(str)
     local ls = lex_setup(new_string_reader(str), "compile_string")
     local ast_builder = lua_ast.New()
     local ast_tree = parse(ast_builder, ls)
-    local lua_code = generator(ast_tree, "compile_string")
+    local lua_code = generator(ast_tree, ast_builder, "compile_string")
     return lua_code
 end
 
 print("\n\n\n\n\n\n\n\n\n\n\n-----------------------------------")
 local ast = lau.compile("test.js", "LUA")
 -- local ast = lau.compile_string("let s = ss")
-PrintType(ast)
-
+-- PrintType(ast.body[1].right[1].body[1])
+-- PrintType(ast)
+-- RunString(ast)
 
 -- local function startBench()
 --     local bench = include("bench.lua")

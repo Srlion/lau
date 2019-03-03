@@ -76,18 +76,7 @@ end
 -- ADDED PARSING METHODS
 local function get_arrow_function(ast, ls, line, force) -- check if current token is arrow function and return parameters or return false
     local reset = ls:fake_llex()
-    local args, vararg
-    if (ls.previousToken != "(" && ls.token == "TK_name") then
-        local val = ls.tokenval
-        ls:next()
-        if (ls.token == "TK_ar") then
-            args, vararg = {val}, false
-        else
-            args = false
-        end
-    else
-        args, vararg = parse_params(ast, ls, nil, !force)
-    end
+    local args, vararg = parse_params(ast, ls, nil, !force)
     if (args == false || ls.token != "TK_ar") then
         if (force) then
             err_token(ls, "TK_ar")
@@ -249,7 +238,7 @@ function expr_simple(ast, ls)
     elseif tk == "TK_function" then
         ls:next()
         local args, body, proto = parse_body(ast, ls, ls.linenumber, false)
-        return ast:expr_function({args}, body, proto)
+        return ast:expr_function(args, body, proto)
     else
         local vk, v = expr_primary(ast, ls)
         if (v == "arrowFunction") then
@@ -319,12 +308,7 @@ function expr_primary(ast, ls)
             lex_match(ls, ')', '(', line)
         end
     elseif ls.token == "TK_name" then
-        local args = get_arrow_function(ast, ls, line)
-        if (args) then
-            vk, v = "arrowFunction", args
-        else
-            vk, v = "var", var_lookup(ast, ls)
-        end
+        vk, v = "var", var_lookup(ast, ls)
     elseif ls.token == "TK_goto" then
         vk, v = "var", var_lookup(ast, ls)
     else
@@ -636,10 +620,14 @@ function parse_params(ast, ls, needself, no_check)
     end
     if ls.token != ")" then
         repeat
-            if ls.token == "TK_name" || (!LJ_52 && ls.token == "TK_goto") then
+            local token = ls.token
+            if token == "TK_name" || (!LJ_52 && token == "TK_goto") then
                 local name = lex_str(ls)
+                if (lex_opt(ls, '=')) then
+                    name = {name = name, default_value = expr(ast, ls)}
+                end
                 args[#args+1] = name
-            elseif ls.token == "TK_dots" then
+            elseif token == "TK_dots" then
                 ls:next()
                 vararg = true
                 break

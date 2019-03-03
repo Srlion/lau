@@ -54,9 +54,9 @@ local function token2str(tok)
     end
 end
 
-local function error_lex(chunkname, tok, line, em, ...)
+local function error_lex(chunkname, tok, line, column, em, ...)
     local emfmt = string.format(em, ...)
-    local msg = string.format("%s:%d: %s", chunkname, line, emfmt)
+    local msg = string.format("%s:%d:%d %s", chunkname, line, column + 1, emfmt)
     if tok then
         msg = string.format("%s near '%s'", msg, tok)
     end
@@ -70,7 +70,7 @@ local function lex_error(ls, token, em, ...)
     elseif token then
         tok = token2str(token)
     end
-    error_lex(ls.chunkname, tok, ls.linenumber, em, ...)
+    error_lex(ls.chunkname, tok, ls.linenumber, ls.column, em, ...)
 end
 
 local function char_isident(c)
@@ -102,6 +102,19 @@ local function char_isspace(c)
     return b >= 9 and b <= 13 or b == 32
 end
 
+local function curr_is_newline(ls)
+    local c = ls.current
+    return (c == '\n' or c == '\r')
+end
+
+local function add_column(ls)
+    if (curr_is_newline(ls)) then
+        ls.column = 1
+    else
+        ls.column = ls.column + 1
+    end
+end
+
 local function byte(ls, n)
     local k = ls.p + n
     return strsub(ls.data, k, k)
@@ -117,6 +130,7 @@ local function pop(ls)
     local c = strsub(ls.data, k, k)
     ls.p = k + 1
     ls.n = ls.n - 1
+    add_column(ls)
     return c
 end
 
@@ -125,7 +139,7 @@ local function fillbuf(ls)
     if not data then
         return END_OF_STREAM
     end
-    ls.data, ls.n, ls.p = data, #data, 1
+    ls.data, ls.n, ls.p, ls.column = data, #data, 1, 0
     return pop(ls)
 end
 
@@ -133,11 +147,6 @@ local function nextchar(ls)
     local c = ls.n > 0 and pop(ls) or fillbuf(ls)
     ls.current = c
     return c
-end
-
-local function curr_is_newline(ls)
-    local c = ls.current
-    return (c == '\n' or c == '\r')
 end
 
 local function resetbuf(ls)
@@ -184,18 +193,6 @@ local function inclinenumber(ls)
         savespace_and_next(ls) -- skip `\n\r' or `\r\n'
     end
     ls.linenumber = ls.linenumber + 1
-end
-
-local function skip_sep(ls)
-    local count = 0
-    local s = ls.current
-    assert(s == '[' or s == ']')
-    save_and_next(ls)
-    while ls.current == '=' do
-        save_and_next(ls)
-        count = count + 1
-    end
-    return ls.current == s and count or (-count - 1)
 end
 
 local function build_64int(str)
@@ -281,34 +278,51 @@ local function lex_number(ls)
     end
 end
 
-local function read_long_string(ls, sep, ret_value)
-    save_and_next(ls) -- skip 2nd `['
-    if curr_is_newline(ls) then -- string starts with a newline?
-        inclinenumber(ls) -- skip it
+local function read_js_comment(ls)
+    save_and_next(ls)
+    if curr_is_newline(ls) then
+        inclinenumber(ls)
     end
     while true do
         local c = ls.current
         if c == END_OF_STREAM then
-            lex_error(ls, 'TK_eof', ret_value and "unfinished long string" or "unfinished long comment")
-        elseif c == ']' then
-            if skip_sep(ls) == sep then
+            lex_error(ls, 'TK_eof', "unfinished long comment")
+        elseif c == '*' then
+            save_and_next(ls)
+            if ls.current == "/" then
                 save_and_next(ls) -- skip 2nd `['
                 break
             end
         elseif c == '\n' or c == '\r' then
             save(ls, '\n')
             inclinenumber(ls)
-            if not ret_value then
-                resetbuf(ls) -- avoid wasting space
-            end
+            resetbuf(ls)
         else
-            if ret_value then save_and_next(ls)
-            else nextchar(ls) end
+            nextchar(ls)
         end
     end
-    if ret_value then
-        return get_string(ls, 2 + sep, 2 + sep)
+end
+
+local function read_long_string(ls, sep, ret_value)
+    save_and_next(ls)
+    if curr_is_newline(ls) then
+        inclinenumber(ls)
     end
+    while true do
+        local c = ls.current
+        if c == END_OF_STREAM then
+            lex_error(ls, 'TK_eof', "unfinished long string")
+        elseif c == '`' then
+            save_and_next(ls)
+            break
+        elseif c == '\n' or c == '\r' then
+            save(ls, '\n')
+            inclinenumber(ls)
+        else
+            save_and_next(ls)
+        end
+    end
+    return get_string(ls, 1, 1)
 end
 
 local Escapes = {
@@ -423,34 +437,20 @@ local function llex(ls)
         elseif current == ' ' or current == '\t' or current == '\b' or current == '\f' then
             savespace_and_next(ls)
             -- nextchar(ls)
-        elseif current == '-' then
+        elseif current == '/' then
             nextchar(ls)
-            if ls.current ~= '-' then return '-' end
-            -- else is a comment
-            nextchar(ls)
-            spaceadd(ls, '--')
-            if ls.current == '[' then
-                local sep = skip_sep(ls)
-                resetbuf_tospace(ls) -- `skip_sep' may dirty the buffer
-                if sep >= 0 then
-                    read_long_string(ls, sep, false) -- long comment
-                    resetbuf_tospace(ls)
-                else
-                    skip_line(ls)
-                end
-            else
+            if ls.current == '/' then
+                nextchar(ls)
                 skip_line(ls)
-            end
-        elseif current == '[' then
-            local sep = skip_sep(ls)
-            if sep >= 0 then
-                local str = read_long_string(ls, sep, true)
-                return 'TK_string', str
-            elseif sep == -1 then
-                return '['
+            elseif ls.current == "*" then
+                read_js_comment(ls)
+                resetbuf_tospace(ls)
             else
-                lex_error(ls, 'TK_string', 'delimiter error')
+                return '/'
             end
+        elseif current == '`' then
+            local str = read_long_string(ls)
+            return 'TK_string', str
         elseif current == '=' then
             nextchar(ls)
             if ls.current == '>' then nextchar(ls) return 'TK_ar' end -- arrow functions

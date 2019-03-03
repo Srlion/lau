@@ -83,6 +83,7 @@ local function is_string(node)
 end
 
 local function is_const(node, val)
+    print(node.kind == "Literal" and node.value == val)
     return node.kind == "Literal" and node.value == val
 end
 
@@ -266,8 +267,28 @@ function StatementRule:StatementsGroup(node)
     end
 end
 
+local function add_default_values(self, node)
+    local body = node.body
+    local added = 0
+    local ast = self.ast
+    for line, param in ipairs(node.params) do
+        local default_value = param.default_value
+        if (default_value) then
+            added = added + 1
+            table.insert(body, added, ast:if_stmt({
+                ast:expr_binop("==", param, ast:literal())
+            }, {{
+                ast:chunk({
+                    ast:assignment_expr({param}, {default_value})
+                })
+            }}))
+        end
+    end
+end
+
 function StatementRule:FunctionDeclaration(node)
     self:proto_enter(0)
+    add_default_values(self, node)
     local name = self:expr_emit(node.id)
     local header = format("function %s(%s)", name, comma_sep_list(node.params, as_parameter))
     if node.locald then
@@ -280,8 +301,10 @@ end
 
 function ExpressionRule:FunctionExpression(node)
     self:proto_enter()
+    add_default_values(self, node)
+    local body = node.body
     local header = format("function(%s)", comma_sep_list(node.params, as_parameter))
-    self:add_section(header, node.body)
+    self:add_section(header, body)
     local child_proto = self:proto_leave()
     return child_proto:inline(), 0
 end
@@ -418,11 +441,12 @@ local function proto_new(parent, indent)
     return proto
 end
 
-local function generate(tree, name)
+local function generate(tree, ast_builder, name)
 
     local self = { line = 0 }
     self.proto = proto_new()
     self.chunkname = tree.chunkname
+    self.ast = ast_builder
 
     function self:proto_enter(indent)
         self.proto = proto_new(self.proto, indent)

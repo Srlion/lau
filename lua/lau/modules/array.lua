@@ -79,6 +79,15 @@ function Array_m:reverse()
     end
 end
 
+function Array_m:map(cb)
+    local newArray = newArray({})
+    for i = 1, maxn(self) do
+        local v = self[i]
+        newArray[i] = (v != nil) && cb(v) || nil
+    end
+    return newArray
+end
+
 function newArray(tbl)
     return setmetatable(tbl, Array_m)
 end
