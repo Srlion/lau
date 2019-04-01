@@ -2,9 +2,11 @@ local operator = include("lau/operators.lua")
 
 local LJ_52 = false
 
-local parse_stmt, parse_func, parse_params
+local parse_stmt, parse_func, parse_params, check_semicolon
 
-local EndOfBlock = { TK_else = true, TK_elseif = true, TK_end = true, TK_until = true, TK_eof = true, ["}"] = true, [";"] = true}
+local EndOfBlock = { TK_else = true, TK_elseif = true, TK_end = true, TK_until = true, TK_eof = true, ["}"] = true,
+-- [";"] = true
+}
 local function err_syntax(ls, em)
     ls:error(ls.token, em)
 end
@@ -20,6 +22,14 @@ end
 
 local function lex_opt(ls, tok)
     if ls.token == tok then
+        ls:next()
+        return true
+    end
+    return false
+end
+
+local function lex_opt2(ls, tok, val)
+    if ls.token == tok && ls.tokenval == val then
         ls:next()
         return true
     end
@@ -46,7 +56,10 @@ local function lex_str(ls)
     if ls.token == "TK_goto" then
         return "goto", ls:next()
     elseif ls.token == "TK_name" then
-        return ls.tokenval, ls:next()
+        local value = ls.tokenval
+        local line = ls.linenumber
+        ls:next()
+        return value, line
     end
     err_token(ls, "TK_name")
 end
@@ -56,14 +69,14 @@ local expr_list, expr_table, expr_array
 local parse_body, parse_block, parse_args
 
 local function var_lookup(ast, ls)
-    local name = lex_str(ls)
-    return ast:identifier(name)
+    local name, line = lex_str(ls)
+    return ast:identifier(name, line)
 end
 
 local function expr_field(ast, ls, v)
     ls:next() -- Skip dot or colon.
-    local key = lex_str(ls)
-    return ast:expr_property(v, key)
+    local key, line = lex_str(ls)
+    return ast:expr_property(v, key, line)
 end
 
 local function expr_bracket(ast, ls)
@@ -74,9 +87,15 @@ local function expr_bracket(ast, ls)
 end
 
 -- ADDED PARSING METHODS
-local function get_arrow_function(ast, ls, line, force) -- check if current token is arrow function and return parameters or return false
+local function get_arrow_function(ast, ls, line, force, name) -- check if current token is arrow function and return parameters or return false
     local reset = ls:fake_llex()
-    local args, vararg = parse_params(ast, ls, nil, !force)
+    local args, vararg
+    if !name then
+        line = ls.lastline
+        args, vararg = parse_params(ast, ls, nil, !force)
+    else
+        args, vararg = {ast:identifier(name, ls.lastline)}, false
+    end
     if (args == false || ls.token != "TK_ar") then
         if (force) then
             err_token(ls, "TK_ar")
@@ -84,16 +103,16 @@ local function get_arrow_function(ast, ls, line, force) -- check if current toke
         reset()
         return false
     else
+        local return_line = ls.linenumber
+        ls.fs.varargs = vararg
         ls:next()
         local body
         if (lex_opt(ls, "{")) then
             body = parse_block(ast, ls, line)
             lex_match(ls, "}", "TK_ar", line)
         else
-            body = {ast:return_stmt({(expr(ast, ls))}, line)}
-            if (!ls.IsInFunctionCall && !ls.IsInTable && ls.previousToken != ";" && ls.token != "TK_eof" && ls.space:match("\n") == nil) then
-                lex_check(ls, ";")
-            end
+            local exp = expr(ast, ls)
+            body = {ast:return_stmt({exp}, return_line)}
         end
         return {body = body, args = ast:func_parameters_decl(args, vararg), firstline = line, lastline = ls.linenumber}
     end
@@ -109,14 +128,21 @@ local function parse_PrefixExpressionInParens(ast, ls)
 end
 
 local function parseBodyOrTillSemicolon(ast, ls, line, who)
+    ls.skip_semicolon = nil
+    local body
     if (lex_opt(ls, "{")) then
-        return parse_block(ast, ls, line), lex_match(ls, "}", who, line)
+        body = parse_block(ast, ls, ls.lastline)
+        lex_match(ls, "}", who, line)
     else
+        ls.empty_statment = true
+        line = ls.lastline
         local stmt, _ = parse_stmt(ast, ls)
-        local body = {stmt}
-        body = ast:chunk(body, ls.chunkname, 0, 3)
-        return {body}, (ls.previousToken != ";" && ls.token != "TK_eof" && ls.space:match("\n") == nil) && lex_check(ls, ";")
+        ls.empty_statment = nil
+        body = {stmt}
+        body = {ast:chunk(body, ls.chunkname, line, ls.lastline)}
     end
+    ls.skip_semicolon = true
+    return body
 end
 
 local function parse_async_func(ast, ls, line, islocal)
@@ -125,23 +151,22 @@ local function parse_async_func(ast, ls, line, islocal)
         err_token(ls, "TK_function")
     end
     local func = parse_func(ast, ls, line)
-    local func_expr = ast:expr_function(func.params, func.body, {
+    local proto = {
         varargs     = func.vararg,
         firstline   = func.firstline,
         lastline    = func.lastline
-    })
+    }
     if (islocal) then
-        return ast:local_decl({func.id.name}, {ast:expr_async_function(func_expr, line)}, line)
+        return ast:async_local_function_decl(func.id, func.params, func.body, proto)
     else
-        return ast:assignment_expr({func.id}, {ast:expr_async_function(func_expr, line)}, line)
+        return ast:async_function_decl(func.id, func.params, func.body, proto, line)
     end
 end
 
 function expr_table(ast, ls)
     lex_check(ls, "{")
-    local line = ls.linenumber
+    local line = ls.lastline
     local kvs = {}
-    ls.IsInTable = true
     while ls.token != "}" do
         local key
         local token = ls.token
@@ -154,10 +179,12 @@ function expr_table(ast, ls)
         end
 
         if (token == "TK_goto") then
-            key = ast:literal("goto")
+            key = ast:literal("goto", ls.linenumber)
             ls:next()
+        elseif ls.token == '[' then
+            key = expr_bracket(ast, ls)
         elseif (token == "TK_string" || token == "TK_number" || token == "TK_name") then
-            key = ast:literal(ls.tokenval)
+            key = ast:literal(ls.tokenval, ls.linenumber)
             ls:next()
         else
             err_token(ls, "TK_name")
@@ -175,20 +202,19 @@ function expr_table(ast, ls)
         end
 
         table.insert(kvs, {val, key}) -- "key" can be nil.
-        if !lex_opt(ls, ",") && !lex_opt(ls, ';') then break end
+        if !lex_opt(ls, ",") then break end
     end
-    ls.IsInTable = nil
     lex_match(ls, "}", "{", line)
-    return ast:expr_table(kvs, line)
+    return ast:expr_table(kvs, line, ls.lastline)
 end
 
 function expr_array(ast, ls)
-    lex_check(ls, "[")
     local line = ls.linenumber
+    lex_check(ls, "[")
     local kvs = {}
     while ls.token != "]" do
         table.insert(kvs, {(expr(ast, ls))})
-        if !lex_opt(ls, ',') && !lex_opt(ls, ';') then
+        if !lex_opt(ls, ',') then
             if (ls.token != "]") then
                 err_token(ls, "}")
             end
@@ -196,53 +222,65 @@ function expr_array(ast, ls)
         end
     end
     lex_match(ls, "]", "[", line)
-    return ast:expr_function_call(ast:identifier("newArray"), {ast:expr_table(kvs, line)}, line)
+    return ast:expr_table(kvs, line, ls.lastline)
+    -- return ast:expr_function_call(ast:identifier("newArray"), {ast:expr_table(kvs, line)}, line)
 end
 
 function expr_simple(ast, ls)
     local tk, val = ls.token, ls.tokenval
     local e
     if tk == "TK_number" then
-        e = ast:literal(val)
+        e = ast:literal(val, ls.linenumber)
     elseif tk == "TK_string" then
-        e = ast:literal(val)
+        e = ast:literal(val, ls.linenumber)
     elseif tk == "TK_nil" then
-        e = ast:literal(nil)
+        e = ast:literal(nil, ls.linenumber)
     elseif tk == "TK_true" then
-        e = ast:literal(true)
+        e = ast:literal(true, ls.linenumber)
     elseif tk == "TK_false" then
-        e = ast:literal(false)
+        e = ast:literal(false, ls.linenumber)
     elseif tk == "TK_dots" then
         if !ls.fs.varargs then
             err_syntax(ls, "cannot use \"...\" outside a vararg function")
         end
-        e = ast:expr_vararg()
+        e = ast:expr_vararg(ls.linenumber)
     elseif tk == "[" then
         return expr_array(ast, ls)
     elseif tk == "{" then
         return expr_table(ast, ls)
     elseif tk == "TK_async" then
+        local async_line, arg = ls.linenumber
         ls:next()
-        local line, arg
+        local line = ls.linenumber
         if (ls.token == "(") then
-            line = ls.linenumber
             ls:next()
             local v = get_arrow_function(ast, ls, line, true)
             arg = ast:expr_function(v.args, v.body, v)
+        elseif ls.token == 'TK_name' then
+            local var = ls.tokenval
+            ls:next()
+            local v = get_arrow_function(ast, ls, line, true, var)
+            arg = ast:expr_function(v.args, v.body, v)
         else
             lex_match(ls, "TK_function", "TK_async", ls.linenumber)
-            line = ls.linenumber
             arg = ast:expr_function(parse_body(ast, ls, line, false))
         end
-        return ast:expr_async_function(arg, line)
+        return ast:expr_async_function(arg, async_line, ls.lastline)
     elseif tk == "TK_function" then
         ls:next()
         local args, body, proto = parse_body(ast, ls, ls.linenumber, false)
         return ast:expr_function(args, body, proto)
+    elseif tk == "TK_new" then
+        ls:next()
+        local v = expr(ast, ls)
+        if (v.kind != "Identifier" && v.kind != "CallExpression") then
+            err_syntax(ls, "expecting name")
+        end
+        return ast:new_expr(v)
     else
         local vk, v = expr_primary(ast, ls)
         if (v == "arrowFunction") then
-            return ast:expr_function(vk.args, vk.body, vk)
+            return ast:expr_function(vk.args, vk.body, vk, ls.linenumber)
         end
         return vk, v
     end
@@ -275,6 +313,16 @@ function expr_unop(ast, ls)
     end
 end
 
+local function parse_tenary(ast, ls, condition)
+    ls:next()
+    local old = ls.tenary_expression
+    ls.tenary_expression = true
+    local left = expr(ast, ls)
+    ls.tenary_expression = old
+    lex_check(ls, ':')
+    return ast:tenary(condition, left, expr(ast, ls))
+end
+
 -- Parse binary expressions with priority higher than the limit.
 function expr_binop(ast, ls, limit)
     local v = expr_unop(ast, ls)
@@ -285,6 +333,9 @@ function expr_binop(ast, ls, limit)
         local v2, nextop = expr_binop(ast, ls, operator.right_priority(op))
         v = ast:expr_binop(op, v, v2, line)
         op = nextop
+    end
+    if op == '?' && limit == 0 then
+        v = parse_tenary(ast, ls, v)
     end
     return v, op
 end
@@ -300,15 +351,37 @@ function expr_primary(ast, ls)
     if ls.token == "(" then
         local line = ls.linenumber
         ls:next()
-        local args = get_arrow_function(ast, ls, line)
+        local args = get_arrow_function(ast, ls, line, false)
         if (args) then
             vk, v = "arrowFunction", args
         else
             vk, v = "expr", ast:expr_brackets(expr(ast, ls))
             lex_match(ls, ')', '(', line)
         end
+    elseif ls.token == "TK_await" then
+        local line = ls.linenumber
+        ls:next()
+        vk, v = "call", ast:await_expr(expr(ast, ls), line)
     elseif ls.token == "TK_name" then
-        vk, v = "var", var_lookup(ast, ls)
+        local line = ls.linenumber
+        if ls:lookahead() == 'TK_ar' then
+            local var = ls.tokenval
+            ls:next()
+            vk, v = "arrowFunction", get_arrow_function(ast, ls, line, false, var)
+        else
+            vk, v = "var", var_lookup(ast, ls)
+        end
+    elseif (ls.token == '++' || ls.token == '--') && ls.linenumber == (ls:lookahead() && ls.lookaheadline) then
+        local line = ls.line
+        local op = ls.token
+        ls:next()
+        ls.incrementing = true
+        local _v, _vk = expr_primary(ast, ls)
+        if _vk != 'indexed' && _vk != 'var' then
+            err_token(ls, 'TK_name')
+        end
+        ls.incrementing = nil
+        vk, v = 'expr', ast:increment_expr(_v, op, false, line)
     elseif ls.token == "TK_goto" then
         vk, v = "var", var_lookup(ast, ls)
     else
@@ -319,20 +392,29 @@ function expr_primary(ast, ls)
         if ls.token == "." then
             vk, v = "indexed", expr_field(ast, ls, v)
         elseif ls.token == "[" then
+            local line = ls.linenumber
             local key = expr_bracket(ast, ls)
+            local lastline = ls.lastline
             vk, v = "indexed", ast:expr_index(v, key)
-        elseif ls.token == ":" then
+            v.firstline = line
+            v.lastline = lastline
+        elseif ls.token == ":" && !ls.tenary_expression then
             ls:next()
-            local key = lex_str(ls)
+            local key = var_lookup(ast, ls)
             local args = parse_args(ast, ls)
-            vk, v = "call", ast:expr_method_call(v, key, args, line)
-        elseif ls.token == "(" || ls.token == "TK_string" || ls.token == "{" then
-            ls.IsInFunctionCall = true
+            vk, v = "call", ast:expr_method_call(v, key, args, line, ls.lastline)
+        elseif ls.token == "(" then
             local args = parse_args(ast, ls)
-            ls.IsInFunctionCall = nil
-            vk, v = "call", ast:expr_function_call(v, args, line)
+            vk, v = "call", ast:expr_function_call(v, args, ls.lastline)
         else
             break
+        end
+    end
+    if vk == 'indexed' || vk == 'var' && !ls.incrementing && ls.linenumber == ls.lastline then
+        local op = ls.token
+        if (op == '++' || op == '--') then
+            ls:next()
+            vk, v = 'expr', ast:increment_expr(v, op, true)
         end
     end
     return v, vk
@@ -343,7 +425,7 @@ local function parse_return(ast, ls, line)
     ls:next() -- Skip 'return'.
     ls.fs.has_return = true
     local exps
-    if EndOfBlock[ls.token] || ls.token == ";" then -- Base return.
+    if EndOfBlock[ls.token] || ls.token == ';' then -- Base return.
         exps = { }
     else -- Return with one or more values.
         exps = expr_list(ast, ls)
@@ -352,27 +434,30 @@ local function parse_return(ast, ls, line)
 end
 
 -- Parse numeric 'for'.
-local function parse_for_num(ast, ls, varname, line)
+local function parse_for_num(ast, ls, varname, line, varline)
     lex_check(ls, '=')
     local init = expr(ast, ls)
     lex_check(ls, ';')
     local last = expr(ast, ls)
-    lex_check(ls, ';')
-    local step = expr(ast, ls)
+    local step
+    if lex_opt(ls, ';') then
+        step = expr(ast, ls)
+    else
+        step = ast:literal(1, ls.linenumber)
+    end
     lex_check(ls, ")")
     local body = parseBodyOrTillSemicolon(ast, ls, line, "TK_for")
-    local var = ast:identifier(varname)
+    local var = ast:identifier(varname, varline)
     return ast:for_stmt(var, init, last, step, body, line, ls.linenumber)
 end
 
 -- Parse 'for' iterator.
-local function parse_for_iter(ast, ls, indexname)
-    local vars = { ast:identifier(indexname) }
+local function parse_for_iter(ast, ls, indexname, line, varline)
+    local vars = { ast:identifier(indexname, varline) }
     while lex_opt(ls, ",") do
         vars[#vars + 1] = ast:identifier(lex_str(ls))
     end
     lex_check(ls, "TK_in")
-    local line = ls.linenumber
     local exps = expr_list(ast, ls)
     lex_check(ls, ")")
     local body = parseBodyOrTillSemicolon(ast, ls, line, "TK_for")
@@ -384,11 +469,12 @@ local function parse_for(ast, ls, line)
     ls:next()  -- Skip 'for'.
     lex_check(ls, "(")
     local varname = lex_str(ls)  -- Get first variable name.
+    local varline = ls.lastline
     local stmt
-    if ls.token == "=" then
-        stmt = parse_for_num(ast, ls, varname, line)
+    if ls.token == '=' then
+        stmt = parse_for_num(ast, ls, varname, line, varline)
     elseif ls.token == "," || ls.token == "TK_in" then
-        stmt = parse_for_iter(ast, ls, varname)
+        stmt = parse_for_iter(ast, ls, varname, line, varline)
     else
         err_syntax(ls, "'=' or 'in' expected")
     end
@@ -426,25 +512,61 @@ function parse_args(ast, ls)
         args = { a }
     elseif ls.token == "TK_string" then
         local a = ls.tokenval
+        local token_line = ls.linenumber
         ls:next()
-        args = { ast:literal(a) }
+        args = { ast:literal(a, token_line) }
     else
         err_syntax(ls, "function arguments expected")
     end
     return args
 end
 
-local function parse_assignment(ast, ls, vlist, var, vk)
+local function parse_assignment(ast, ls, vlist, var, vk, local_decl)
     local line = ls.linenumber
+    if (istable(var) && var.kind == "IncrementExpression") then
+        var.kind = "IncrementStatement"
+        return var
+    end
     checkcond(ls, vk == "var" || vk == "indexed", "syntax error")
-    vlist[#vlist+1] = var
+    vlist[#vlist + 1] = var
     if lex_opt(ls, ',') then
         local n_var, n_vk = expr_primary(ast, ls)
-        return parse_assignment(ast, ls, vlist, n_var, n_vk)
+        return parse_assignment(ast, ls, vlist, n_var, n_vk, local_decl)
     else -- Parse RHS.
-        lex_check(ls, '=')
-        local exps = expr_list(ast, ls)
-        return ast:assignment_expr(vlist, exps, line)
+        local op = ls.token == 'TK_ao' && ls.tokenval || '='
+        local assigning = true
+        if lex_opt(ls, 'TK_ao') then
+            if #vlist > 1 then
+                err_syntax(ls, "can't assign multiple vars using '" .. op .. "='")
+            else
+                vlist = vlist[1]
+            end
+        elseif !lex_opt(ls, '=') then
+            assigning = false
+        end
+        local exps
+        if local_decl then
+            if (assigning) then
+                if (op != '=') then
+                    exps = expr(ast, ls)
+                else
+                    exps = expr_list(ast, ls)
+                end
+            else
+                exps = {}
+            end
+            return exps, op
+        else
+            if !assigning then
+                lex_check(ls, '=')
+            end
+            if (op != '=') then
+                exps = expr(ast, ls)
+            else
+                exps = expr_list(ast, ls)
+            end
+            return ast:assignment_expr(vlist, exps, op, line)
+        end
     end
 end
 
@@ -462,23 +584,20 @@ end
 local function parse_local(ast, ls)
     local line = ls.linenumber
     if ls.token == "TK_async" then
-        return ( parse_async_func(ast, ls, line, true))
+        return (parse_async_func(ast, ls, line, true))
     elseif lex_opt(ls, 'TK_function') then -- Local function declaration.
-        local name = lex_str(ls)
+        local name = var_lookup(ast, ls)
         local args, body, proto = parse_body(ast, ls, line, false)
+        ls.skip_semicolon = true
         return ast:local_function_decl(name, args, body, proto)
     else -- Local variable declaration.
-        local vl = { }
-        repeat -- Collect LHS.
-            vl[#vl+1] = lex_str(ls)
-        until !lex_opt(ls, ',')
-        local exps
-        if lex_opt(ls, '=') then -- Optional RHS.
-            exps = expr_list(ast, ls)
-        else
-            exps = { }
+        local vl = {}
+        local var = var_lookup(ast, ls)
+        local exps, op = parse_assignment(ast, ls, vl, var, "var", true)
+        if !op then
+            return exps
         end
-        return ast:local_decl(vl, exps, line)
+        return ast:local_decl(vl, exps, op, line)
     end
 end
 
@@ -495,6 +614,7 @@ function parse_func(ast, ls, line)
         v = expr_field(ast, ls, v)
     end
     local args, body, proto = parse_body(ast, ls, line, needself)
+    ls.skip_semicolon = true
     return ast:function_decl(v, args, body, proto)
 end
 
@@ -511,6 +631,8 @@ end
 local function parse_then(ast, ls, tests, line, who)
     ls:next()
     table.insert(tests, parse_PrefixExpressionInParens(ast, ls))
+    tests[#tests].firstline = line
+    tests[#tests].bodystart = ls.lastline
     return parseBodyOrTillSemicolon(ast, ls, line, who)
 end
 
@@ -518,39 +640,43 @@ local function parse_if(ast, ls, line)
     local tests, blocks = { }, { }
     blocks[1] = parse_then(ast, ls, tests, line, "TK_if")
     while ls.token == "TK_else" && ls:lookahead() == "TK_if" do
+        local line = ls.linenumber
         ls:next()
-        blocks[#blocks+1] = parse_then(ast, ls, tests, ls.linenumber, "else if")
+        blocks[#blocks + 1] = parse_then(ast, ls, tests, line, "else if")
+        tests[#blocks].firstline = line
     end
     local else_branch
     if ls.token == "TK_else" then
         local eline = ls.linenumber
         ls:next() -- Skip 'else'.
         else_branch = parseBodyOrTillSemicolon(ast, ls, eline, "TK_else")
+        else_branch.line = eline
     end
-    return ast:if_stmt(tests, blocks, else_branch, line)
+    return ast:if_stmt(tests, blocks, else_branch, line, ls.lastline)
 end
 
 local function parse_label(ast, ls)
     ls:next() -- Skip '::'.
-    local name = lex_str(ls)
+    local name = var_lookup(ast, ls)
     lex_check(ls, "TK_label")
-    -- Recursively parse trailing statements: labels and ';' (Lua 5.2 only).
-    while true do
-        if ls.token == "TK_label" then
-            parse_label(ast, ls)
-        elseif ls.token == ';' then
-            ls:next()
-        else
-            break
-        end
-    end
     return ast:label_stmt(name, ls.linenumber)
 end
 
 local function parse_goto(ast, ls)
-    local line = ls.linenumber
-    local name = lex_str(ls)
+    local line = ls.lastline
+    local name = var_lookup(ast, ls)
     return ast:goto_stmt(name, line)
+end
+
+function check_semicolon(ls, dont_skip)
+    if ls.skip_semicolon && !dont_skip then
+        ls.skip_semicolon = nil
+    else
+        if !lex_opt(ls, ';') then
+            ls.linenumber = ls.lastline
+            ls:error(ls.token, "';' expected to end statment")
+        end
+    end
 end
 
 -- Parse a statement. Returns the statement itself and a boolean that tells if it
@@ -565,9 +691,11 @@ function parse_stmt(ast, ls)
         stmt = parse_while(ast, ls, line)
     elseif token == "TK_do" then
         ls:next()
+        lex_check(ls, "{")
         local body = parse_block(ast, ls)
         local lastline = ls.linenumber
-        lex_match(ls, "TK_end", "TK_do", line)
+        lex_match(ls, "}", "TK_do", line)
+        ls.skip_semicolon = true
         stmt = ast:do_stmt(body, line, lastline)
     elseif token == "TK_for" then
         stmt = parse_for(ast, ls, line)
@@ -582,14 +710,17 @@ function parse_stmt(ast, ls)
         stmt = parse_local(ast, ls, line)
     elseif token == "TK_return" then
         stmt = parse_return(ast, ls, line)
+        check_semicolon(ls, true)
         return stmt, true -- Must be last.
     elseif token == "TK_break" then
         ls:next()
         stmt = ast:break_stmt(line)
+        check_semicolon(ls, true)
         return stmt, !LJ_52 -- Must be last in Lua 5.1.
     elseif token == "TK_continue" then
         ls:next()
         stmt = ast:continue_stmt(line)
+        check_semicolon(ls, true)
         return stmt, true
     elseif token == "TK_label" then
         stmt = parse_label(ast, ls)
@@ -600,11 +731,16 @@ function parse_stmt(ast, ls)
         end
     end
 
-    if (!stmt && lex_opt(ls, ";")) then return end
+    if (!stmt && ls.empty_statment && lex_opt(ls, ";")) then
+        return
+    end
     -- If here 'stmt' is "nil" then ls.token didn't match any of the previous rules.
     -- Fall back to call/assign rule.
     if !stmt then
         stmt = parse_call_assign(ast, ls)
+    end
+    if (stmt) then
+        check_semicolon(ls)
     end
     return stmt, false
 end
@@ -616,54 +752,36 @@ function parse_params(ast, ls, needself, no_check)
     local args = { }
     local vararg = false
     if needself then
-        args[1] = "self"
+        args[1] = ast:identifier("self", ls.linenumber)
     end
     if ls.token != ")" then
         repeat
             local token = ls.token
             if token == "TK_name" || (!LJ_52 && token == "TK_goto") then
-                local name = lex_str(ls)
+                local name = var_lookup(ast, ls)
                 if (lex_opt(ls, '=')) then
                     name = {name = name, default_value = expr(ast, ls)}
                 end
-                args[#args+1] = name
+                args[#args + 1] = name
             elseif token == "TK_dots" then
                 ls:next()
-                vararg = true
+                vararg = ls.lastline
                 break
             else
                 if (no_check) then
                     return false
-                else
-                    err_syntax(ls, "<name> or \"...\" expected")
                 end
-            end
-        until !lex_opt(ls, ',')
-    end
-    lex_check(ls, ")")
-    return args, vararg
-end
-
-local function get_after_params(ast, ls)
-    local args = { }
-    local vararg = false
-    local token = ls.token
-    if token != ")" then
-        repeat
-            if ls.token == "TK_name" || (!LJ_52 && ls.token == "TK_goto") then
-                local name = lex_str(ls)
-                args[#args+1] = name
-            elseif ls.token == "TK_dots" then
-                ls:next()
-                token = llex(ls)
-                vararg = true
-                break
-            else
                 err_syntax(ls, "<name> or \"...\" expected")
             end
         until !lex_opt(ls, ',')
     end
-    lex_check(ls, ")")
+    if ls.token != ')' then
+        if (no_check) then
+            return false
+        end
+        err_token(ls, tok)
+    end
+    ls:next()
     return args, vararg
 end
 
@@ -673,12 +791,11 @@ end
 
 local function parse_block_stmts(ast, ls)
     local firstline = ls.linenumber
-    local stmt, islast = nil, false
+    local stmt, islast, lastline = nil, false
     local body = { }
     while !islast && !EndOfBlock[ls.token] do
-        stmt, islast = parse_stmt(ast, ls)
+        stmt, islast, lastline = parse_stmt(ast, ls)
         body[#body + 1] = stmt
-        lex_opt(ls, ';')
     end
     return body, firstline, ls.linenumber
 end

@@ -10,41 +10,36 @@ local ASCII_A, ASCII_Z = 65, 90
 
 local END_OF_STREAM = -1
 
-local ReservedKeyword = {
-    ['and']         = 1,
-    ['break']       = 2,
-    ['do']          = 3,
-    ['else']        = 4,
-    ['elseif']      = 5,
-    ['end']         = 6,
-    ['false']       = 7,
-    ['for']         = 8,
-    ['function']    = 9,
-    ['goto']        = 10,
-    ['if']          = 11,
-    ['in']          = 12,
-    ['let']         = 13,
-    ['nil']         = 14,
-    ['not']         = 15,
-    ['or']          = 16,
-    ['repeat']      = 17,
-    ['return']      = 18,
-    ['then']        = 19,
-    ['true']        = 20,
-    ['until']       = 21,
-    ['while']       = 22,
+local function table_to_true(tbl)
+    for k, v in ipairs(tbl) do
+        tbl[v] = true
+        tbl[k] = nil
+    end
+    return tbl
+end
+
+local ReservedKeyword = table_to_true{
+    'while', 'for', 'repeat',
+    'in', 'break', 'until',
+    'function', 'goto', 'if', 'else',
+    'not', 'and', 'or',
+    'return', 'do',
+    'true', 'false', 'nil',
     -- glua
-    ['&&']          = 23,
-    ['||']          = 24,
-    ['continue']    = 25,
-    ['!']           = 26,
-    -- new shit
-    ['async']       = 27
+    'continue',
+    -- lau
+    'let', 'async', 'await', 'new'
 }
+
+local ReplacedKeyword = table_to_true{
+    'end', 'local', 'then', 'elseif'
+}
+
 local uint64, int64 = ffi.typeof('uint64_t'), ffi.typeof('int64_t')
 local complex = ffi.typeof('complex')
 
-local TokenSymbol = { TK_ge = '>=', TK_le = '<=' , TK_concat = '..', TK_eq = '==', TK_ne = '~=', TK_eof = '<eof>', TK_ar = '=>' }
+local TokenSymbol = { TK_ge = '>=', TK_le = '<=' , TK_concat = '..', TK_eq = '==',
+    TK_ne = '~=', TK_eof = '<eof>', TK_ar = '=>' }
 
 local function token2str(tok)
     if string.match(tok, "^TK_") then
@@ -67,6 +62,8 @@ local function lex_error(ls, token, em, ...)
     local tok
     if token == 'TK_name' or token == 'TK_string' or token == 'TK_number' then
         tok = ls.save_buf
+    elseif token == 'TK_ao' then
+        tok = ls.tokenval .. '='
     elseif token then
         tok = token2str(token)
     end
@@ -413,6 +410,14 @@ local function skip_line(ls)
     end
 end
 
+local assignment_operators = {
+    ["+"] = true,
+    ["-"] = true,
+    ["*"] = true,
+    ["^"] = true,
+    ["%"] = true
+}
+
 local function llex(ls)
     resetbuf(ls)
     while true do
@@ -428,6 +433,8 @@ local function llex(ls)
             local reserved = ReservedKeyword[s]
             if reserved then
                 return 'TK_' .. s
+            elseif (ReplacedKeyword[s]) then
+                return 'TK_name', '__' .. s .. '__'
             else
                 return 'TK_name', s
             end
@@ -445,6 +452,9 @@ local function llex(ls)
             elseif ls.current == "*" then
                 read_js_comment(ls)
                 resetbuf_tospace(ls)
+            elseif ls.current == '=' then
+                nextchar(ls)
+                return 'TK_ao', '/'
             else
                 return '/'
             end
@@ -453,8 +463,13 @@ local function llex(ls)
             return 'TK_string', str
         elseif current == '=' then
             nextchar(ls)
-            if ls.current == '>' then nextchar(ls) return 'TK_ar' end -- arrow functions
-            if ls.current ~= '=' then return '=' else nextchar(ls); return 'TK_eq' end
+            if ls.current == '>' then nextchar(ls); return 'TK_ar' end -- arrow functions
+            if ls.current ~= '=' then return current else nextchar(ls); return 'TK_eq' end
+        elseif assignment_operators[current] then
+            nextchar(ls)
+            if (current == '+' or current == '-') and ls.current == current then nextchar(ls) return current .. current end
+            if ls.current == '&' then nextchar(ls); return 'TK_&&' end
+            if ls.current == '=' then nextchar(ls); return 'TK_ao', current else return current end
         elseif current == '<' then
             nextchar(ls)
             if ls.current ~= '=' then return '<' else nextchar(ls); return 'TK_le' end
@@ -473,7 +488,7 @@ local function llex(ls)
             return 'TK_!'
         elseif current == '&' || current == '|' then
             nextchar(ls)
-            if (ls.current != current) then
+            if (ls.current ~= current) then
                 return current
             end
             nextchar(ls)
@@ -491,8 +506,11 @@ local function llex(ls)
                 if ls.current == '.' then
                     nextchar(ls)
                     return 'TK_dots' -- ...
+                elseif ls.current == '=' then
+                    nextchar(ls)
+                    return 'TK_ao', '..'
                 end
-                return 'TK_concat' -- ..
+                return 'TK_concat'
             elseif not char_isdigit(ls.current) then
                 return '.'
             else
@@ -521,6 +539,7 @@ function Lexer.next(ls)
     else
         ls.previousToken, ls.previousTokenVal = ls.token, ls.tokenval
         ls.token, ls.tokenval = ls.tklookahead, ls.tklookaheadval
+        ls.linenumber = ls.lookaheadline
         ls.space = ls.spaceahead
         ls.tklookahead = 'TK_eof'
     end
@@ -528,8 +547,13 @@ end
 
 function Lexer.lookahead(ls)
     assert(ls.tklookahead == 'TK_eof')
+    local line = ls.linenumber
+    local lastline = ls.lastline
     ls.tklookahead, ls.tklookaheadval = llex(ls)
     ls.spaceahead = get_space_string(ls)
+    ls.lookaheadline = ls.linenumber
+    ls.linenumber = line
+    ls.lastline = lastline
     return ls.tklookahead
 end
 

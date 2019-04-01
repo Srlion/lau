@@ -1,11 +1,15 @@
 if _G[debug.getinfo(1).short_src] then return end _G[debug.getinfo(1).short_src] = true timer.Create("loading" .. debug.getinfo(1).short_src, 0.2, 1, function() _G[debug.getinfo(1).short_src] = false end)
 
+-- s = function(s,)
+--     print(s)
+-- end
 lau = {}
 
 include("lau/modules/array.lua")
+LAU_ASYNC = include("lau/modules/async.lua")
 local parse = include("lau/parser.lua")
 local lex_setup = include("lau/lexer.lua")
-local generator = include("lau/generator.lua")
+local generator = include("lau/test_generator.lua")
 local lua_ast = include("lau/ast.lua")
 
 local function new_file_reader(filename, path)
@@ -22,11 +26,10 @@ local function new_file_reader(filename, path)
     return reader
 end
 
-local strsub = string.sub
 local function new_string_reader(src)
     local pos = 1
     local function reader()
-        local chunk = strsub(src, pos, pos + 4096 - 32)
+        local chunk = string.sub(src, pos, pos + 4096 - 32)
         pos = pos + #chunk
         return #chunk > 0 && chunk || nil
     end
@@ -49,25 +52,52 @@ function lau.compile_string(str)
     return lua_code
 end
 
+function lau.include_file(fileName, path)
+    path = path || "LUA"
+    local code = lau.compile(fileName, "LUA")
+    file.Write("tesst.txt", code)
+    return CompileString(code, fileName)()
+end
+
 print("\n\n\n\n\n\n\n\n\n\n\n-----------------------------------")
-local ast = lau.compile("test.js", "LUA")
 -- local ast = lau.compile_string("let s = ss")
 -- PrintType(ast.body[1].right[1].body[1])
--- PrintType(ast)
--- RunString(ast)
+do
+    local meta = getmetatable( "" )
+    local string = string
+    local isnumber = isnumber
+    local len = string.len
+    local sub = string.sub
+    function meta:__index( key )
+        return string[ key ] ||
+            ( key == "length" && len( self ) ) ||
+            ( isnumber( key ) && sub( self, key, key ) ) ||
+            error( "attempt to index a string value with bad key ('" .. tostring( key ) .. "' is not part of the string library)", 2 )
+    end
+end
 
--- local function startBench()
---     local bench = include("bench.lua")
---     print("\n\n\n\n\n------------------")
---     for i = 1, 6 do
---         print()
---         bench.Compare({
---             function()
---             end,
---             function()
---             end
---         }, 9999)
---     end
---     print("\n------------------")
--- end
--- concommand.Add("a", startBench)
+lau.include_file("lau/modules/await.lau")
+lau.include_file("lau/modules/promise.lau")
+
+local ast = lau.compile("test.lau", "LUA")
+PrintType(ast)
+file.Write("test.txt", ast)
+CompileString(ast, "test.lau")()
+
+local function startBench()
+    local bench = include("bench.lua")
+    print("\n\n\n\n\n------------------")
+    for i = 1, 6 do
+        print()
+        bench.Compare({
+            function()
+
+            end,
+            function()
+
+            end
+        }, 999991)
+    end
+    print("\n------------------")
+end
+concommand.Add("a", startBench)

@@ -12,7 +12,6 @@ local binop = {
     ['&&'] = 2 * 256 + 2,
     ['||'] = 1 * 256 + 1,
     -- new shits
-    -- ['=>'] = 3 * 256 + 3
 }
 
 local unary_priority = 8

@@ -10,34 +10,25 @@ local operator = include("lau/operators.lua")
 
 local strbyte, strsub = string.byte, string.sub
 
-local LuaReservedKeyword = {
-    ['and']         = 1,
-    ['break']       = 2,
-    ['do']          = 3,
-    ['else']        = 4,
-    ['elseif']      = 5,
-    ['end']         = 6,
-    ['false']       = 7,
-    ['for']         = 8,
-    ['function']    = 9,
-    ['goto']        = 10,
-    ['if']          = 11,
-    ['in']          = 12,
-    ['let']         = 13,
-    ['nil']         = 14,
-    ['not']         = 15,
-    ['or']          = 16,
-    ['repeat']      = 17,
-    ['return']      = 18,
-    ['then']        = 19,
-    ['true']        = 20,
-    ['until']       = 21,
-    ['while']       = 22,
+local function table_to_true(tbl)
+    for k, v in ipairs(tbl) do
+        tbl[v] = true
+        tbl[k] = nil
+    end
+    return tbl
+end
+
+local LuaReservedKeyword = table_to_true{
+    'while', 'for', 'repeat',
+    'in', 'break', 'until',
+    'function', 'goto', 'if', 'else',
+    'not', 'and', 'or',
+    'return', 'do',
+    'true', 'false', 'nil',
     -- glua
-    ['&&']          = 23,
-    ['||']          = 24,
-    ['continue']    = 25,
-    ['!']           = 26
+    'continue',
+    -- lau
+    'let', 'async', 'await', 'new'
 }
 
 local ASCII_0, ASCII_9 = 48, 57
@@ -83,7 +74,6 @@ local function is_string(node)
 end
 
 local function is_const(node, val)
-    print(node.kind == "Literal" and node.value == val)
     return node.kind == "Literal" and node.value == val
 end
 
@@ -261,9 +251,69 @@ function ExpressionRule:SendExpression(node)
     return exp, operator.ident_priority
 end
 
+function ExpressionRule:TenaryExpression(node)
+    local condition = self:expr_emit(node.condition)
+    local left = self:expr_emit(node.left)
+    local right = self:expr_emit(node.right)
+    local exp = format("(%s && {%s} || {%s})[1]", condition, left, right)
+    return exp, operator.ident_priority
+end
+
+function ExpressionRule:NewExpression(node)
+    local expr = node.expr
+    local iden = self:expr_emit(expr)
+    local args = ""
+    if (expr.kind == "CallExpression") then
+        iden = self:expr_emit(expr.callee)
+        args = self:expr_list(expr.arguments)
+    end
+    local exp = format("%s:__new(%s)", iden, args)
+    return exp, operator.ident_priority
+end
+
+function ExpressionRule:AwaitExpression(node)
+    local exp = format([[__await(%s)]], self:expr_emit(node.expr))
+    return exp, operator.ident_priority
+end
+
+function StatementRule:AwaitExpression(node)
+    self:add_line(ExpressionRule.AwaitExpression(self, node))
+end
+
 function StatementRule:StatementsGroup(node)
     for i = 1, #node.statements do
         self:emit(node.statements[i])
+    end
+end
+
+function StatementRule:IncrementStatement(node)
+    local var = self:expr_emit(node.var)
+    local line = format("%s = %s %s 1", var, var, node.operator)
+    self:add_line(line)
+end
+
+function ExpressionRule:IncrementExpression(node)
+    local line
+    local var = self:expr_emit(node.var)
+    if (node.in_loop || true) then
+        if node.pre then
+            line = format("(function()local temp=%s;%s=%s%s1;return temp;end)()",
+                var, var, var, node.operator)
+        else
+            line = format("(function()%s=%s%s1;return %s;end)()", var, var, node.operator, var)
+        end
+        return line, operator.ident_priority
+    else
+        local new_var = var
+        if node.pre then
+            new_var = "__temp__" .. util.CRC(var) .. math.random(5, 50)
+            line = format("local % s = %s; %s = %s %s 1",
+                new_var, var, var, var, node.operator)
+        else
+            line = format("%s = %s %s 1", var, var, node.operator, var)
+        end
+        self:add_line(line)
+        return new_var, operator.ident_priority
     end
 end
 
@@ -273,16 +323,13 @@ local function add_default_values(self, node)
     local ast = self.ast
     for line, param in ipairs(node.params) do
         local default_value = param.default_value
-        if (default_value) then
-            added = added + 1
-            table.insert(body, added, ast:if_stmt({
-                ast:expr_binop("==", param, ast:literal())
-            }, {{
-                ast:chunk({
-                    ast:assignment_expr({param}, {default_value})
-                })
-            }}))
-        end
+        if (not default_value) then continue end
+        added = added + 1
+        local test = ast:expr_binop("==", param, ast:literal())
+        test.bracketed = true
+        table.insert(body, added, ast:if_stmt({test}, {{
+            ast:chunk({ast:assignment_expr({param}, {default_value}, '=')})
+        }}))
     end
 end
 
@@ -299,6 +346,13 @@ function StatementRule:FunctionDeclaration(node)
     self.proto:merge(child_proto)
 end
 
+function StatementRule:AsyncFunctionDeclaration(node)
+    StatementRule.FunctionDeclaration(self, node)
+    local code = self.proto.code
+    local name = self:expr_emit(node.id)
+    code[#code] = code[#code] .. "; " .. name .. " = async(" .. name .. ")"
+end
+
 function ExpressionRule:FunctionExpression(node)
     self:proto_enter()
     add_default_values(self, node)
@@ -312,6 +366,17 @@ end
 function StatementRule:CallExpression(node)
     local line = self:expr_emit(node)
     self:add_line(line)
+end
+
+local function check_increment(node)
+    for k, v in pairs(node) do
+        if (istable(v)) then
+            if (v.kind == "IncrementExpression") then
+                v.in_loop = true
+            end
+            check_increment(v)
+        end
+    end
 end
 
 function StatementRule:ForStatement(node)
@@ -340,6 +405,7 @@ function StatementRule:DoStatement(node)
 end
 
 function StatementRule:WhileStatement(node)
+    check_increment(node.test)
     local test = self:expr_emit(node.test)
     local header = format("while %s do", test)
     self:add_section(header, node.body)
@@ -347,6 +413,7 @@ end
 
 function StatementRule:RepeatStatement(node)
     self:add_section("repeat", node.body, true)
+    check_increment(node.test)
     local test = self:expr_emit(node.test)
     local until_line = format("until %s", test)
     self:add_line(until_line)
@@ -378,16 +445,46 @@ function StatementRule:LocalDeclaration(node)
     local line
     local names = comma_sep_list(node.names, as_parameter)
     if #node.expressions > 0 then
-        line = format("local %s = %s", names, self:expr_list(node.expressions))
+        if node.operator == '=' then
+            line = format("local %s = %s", names, self:expr_list(node.expressions))
+        else
+            line = format("local %s = %s %s (%s)", names, names, node.operator, self:expr_list(node.expressions))
+        end
     else
         line = format("local %s", names)
     end
     self:add_line(line)
 end
 
+function StatementRule:MultiLocalDeclaration(node)
+    for k, v in ipairs(node.vars) do
+        StatementRule.LocalDeclaration(self, v)
+    end
+end
+
 function StatementRule:AssignmentExpression(node)
-    local line = format("%s = %s", self:expr_list(node.left), self:expr_list(node.right))
+    local line
+    if node.operator == '=' then
+        line = format("%s = %s", self:expr_list(node.left), self:expr_list(node.right))
+    else
+        local left = self:expr_list(node.left)
+        if node.operator == '&' then
+            node.operator = '..'
+        end
+        if #node.right > 1 then
+            local right = self:expr_list({table.remove(node.right, 1)})
+            line = format("%s = (%s %s (%s)), %s", left, left, node.operator, right, self:expr_list(node.right))
+        else
+            line = format("%s = %s %s (%s)", left, left, node.operator, self:expr_list(node.right))
+        end
+    end
     self:add_line(line)
+end
+
+function StatementRule:MultiAssignmentExpression(node)
+    for k, v in ipairs(node.vars) do
+        StatementRule.AssignmentExpression(self, v)
+    end
 end
 
 function StatementRule:Chunk(node)
@@ -400,7 +497,13 @@ function StatementRule:ExpressionStatement(node)
 end
 
 function StatementRule:ReturnStatement(node)
-    local line = format("return %s", self:expr_list(node.arguments))
+    local exps = self:expr_list(node.arguments)
+    local line
+    if (exps == "") then
+        line = "return"
+    else
+        line = format("return %s", self:expr_list(node.arguments))
+    end
     self:add_line(line)
 end
 
