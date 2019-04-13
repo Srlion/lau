@@ -1,0 +1,50 @@
+let lexer = lau.lexer;
+let Keyword = lexer.Keyword;
+let Literal = lexer.Literal;
+let Op = lexer.Op;
+let Token = lexer.Token;
+
+let parse, parse_node, parse_flags, next_is_in, next_is, peek;
+function parse(self) {
+	let tokens = {}
+	while (self.n > 0) {
+        let failed, value = parse_node(self);
+        if (!failed) {
+        	table.insert(tree, value);
+        else
+        	table.insert(errors, value);
+        }
+    }
+}
+function parse_node(self) {
+
+}
+function parse_flags(self) {
+	let flags = {false, false, false};
+	let allowed_flags = [Keyword.Let, Keyword.Static, Keyword.Async];
+	while (next_is_in(self, allowed_flags)) {
+
+	}
+}
+function next_is_in(self, possibilities) {
+	for (_, possibility in ipairs(possibilities)) {
+		if (next_is(self, possibility)) {
+            return true;
+        }
+	}
+	return false;
+}
+function next_is(self, expected) {
+	let failed, token = peek(self);
+	if (!failed)
+		return token == expected;
+	else
+		return false, token;
+}
+function peek(self) {
+	let token = self.token;
+	if (token == Token.EOF)
+		return false, "Unexpected EOF";
+	else
+		return true, token;
+}

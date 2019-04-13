@@ -1,0 +1,49 @@
+let enum = lau.include_file("lau/enum.lau");
+
+let Msg = Msg;
+let tostring = tostring;
+let setfenv = setfenv;
+
+let table_to_true = (tbl) => {
+    for (k, v in ipairs(tbl))
+        tbl[k], tbl[v] = nil, v;
+    return tbl;
+};
+
+let TOKEN, Token;
+TOKEN, Token = enum(
+    nil,
+    s => {
+        setfenv(1, TOKEN);
+        let Check_Tokens = [Arrow, Colon, Label, Comma, Semicolon, LParens, LBrace, LBracket, RBracket, RBrace, RParens, RParens, EOF];
+        Check_Tokens = table_to_true(Check_Tokens);
+        Msg("Token(");
+        if (Check_Tokens[s]) {
+            Msg(tostring(Check_Tokens[s]));
+        } else if (s == Keyword || s == Literal || s == Op) {
+            Msg(s.value);
+        } else if (s == Ident) {
+            Msg("[ident: ", s.value, "]");
+        }
+        return ")";
+    }
+);
+
+Token("Arrow", () => "'=>'");
+Token("Colon", () => "':'");
+Token("Label", () => "'::'");
+Token("Comma", () => "','");
+Token("Semicolon", () => "';'");
+Token("LParens", () => "'('");
+Token("LBrace", () => "'{'");
+Token("LBracket", () => "'['");
+Token("RBracket", () => "']'");
+Token("RBrace", () => "'}'");
+Token("RParens", () => "')'");
+Token("Keyword", s => tostring(s.value));
+Token("Literal", s => tostring(s.value));
+Token("Ident", s => tostring(s.value));
+Token("Op", s => tostring(s.value));
+Token("EOF", () => "EOF");
+
+return TOKEN;

@@ -1,0 +1,30 @@
+lau.lexer = {}; lexer = lau.lexer;
+lexer.Keyword = lau.include_file("lau/lexer/keyword.lau");
+lexer.Literal = lau.include_file("lau/lexer/literal.lau");
+lexer.Op = lau.include_file("lau/lexer/op.lau");
+lexer.Token = lau.include_file("lau/lexer/token.lau");
+
+let function new_string_reader(src) {
+    let pos = 1;
+    let function reader() {
+        let chunk = string.sub(src, pos, pos + 4096 - 32);
+        pos = pos + #chunk;
+        return #chunk > 0 && chunk || nil;
+    }
+    return reader;
+}
+
+let isstring = isstring;
+let f_Open = file.Open;
+let function new_file_reader(filename, path = "LUA") {
+    if (!isstring(filename))
+        error("invalid file name (" .. filename .. ")");
+    let f = f_Open(filename, "rb", path);
+    let size = f:Size();
+    return f:Read(size), size, f:Close();
+}
+
+let lex_setup = include("lau/lexer/main.lua");
+return (filename, path) => {
+    return lex_setup(filename, new_file_reader(filename, path));
+};

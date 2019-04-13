@@ -1,0 +1,25 @@
+let enum = lau.include_file("lau/enum.lau");
+let KEYWORD, Keyword = enum(
+	s => "'" .. s.key:lower() .. "'",
+	s => "Keyword(" .. s .. ")"
+);
+
+Keyword("Async");
+Keyword("Await");
+Keyword("Class");
+Keyword("Else");
+Keyword("Enum");
+Keyword("Extends");
+Keyword("For");
+Keyword("ForEach");
+Keyword("Function");
+Keyword("If");
+Keyword("In");
+Keyword("Let");
+Keyword("New");
+Keyword("Return");
+Keyword("Static");
+Keyword("While");
+Keyword("Do");
+
+return KEYWORD;

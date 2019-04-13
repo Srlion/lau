@@ -1,0 +1,5 @@
+let value = [];
+function LAU_TENARY(arg) {
+	value[1] = arg;
+	return value;
+}

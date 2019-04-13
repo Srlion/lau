@@ -28,7 +28,7 @@ local ReservedKeyword = table_to_true{
     -- glua
     'continue',
     -- lau
-    'let', 'async', 'await', 'new'
+    'let', 'async', 'await', 'new', 'class', 'static', 'extends'
 }
 
 local ReplacedKeyword = table_to_true{
@@ -41,6 +41,7 @@ local complex = ffi.typeof('complex')
 local TokenSymbol = { TK_ge = '>=', TK_le = '<=' , TK_concat = '..', TK_eq = '==',
     TK_ne = '~=', TK_eof = '<eof>', TK_ar = '=>' }
 
+local llex
 local function token2str(tok)
     if string.match(tok, "^TK_") then
         return TokenSymbol[tok] or string.sub(tok, 4)
@@ -300,21 +301,106 @@ local function read_js_comment(ls)
     end
 end
 
-local function read_long_string(ls, sep, ret_value)
-    save_and_next(ls)
+local function add_to_literal_string(ls, tbl, tk, tkv)
+    tbl = tbl || ls.template_string_tokens
+    return table.insert(tbl, {line = ls.linenumber, tk, tkv})
+end
+
+local function read_till_char(ls)
+    local reset = ls:fake_llex()
+    ls.template_string_tokens = nil
+    local tokens = {}
+    add_to_literal_string(ls, tokens, "(")
+    nextchar(ls)
+    local skips = 0
+    while true do
+        local c = ls.current
+        if c == END_OF_STREAM then
+            lex_error(ls, 'TK_eof', "unfinished literal string")
+        elseif c == "{" then
+            add_to_literal_string(ls, tokens, "{")
+            nextchar(ls)
+            skips = skips + 1
+        elseif c == "}" then
+            if (skips > 0) then
+                add_to_literal_string(ls, tokens, "}")
+                nextchar(ls)
+                skips = skips - 1
+            else
+                add_to_literal_string(ls, tokens, ")")
+                nextchar(ls)
+                local line, p = ls.linenumber, ls.p
+                reset()
+                ls.linenumber = line
+                if (#tokens == 2) then
+                    lex_error(ls, '}', "expecting expression")
+                end
+                return tokens, p
+            end
+        elseif c == '\n' or c == '\r' then
+            inclinenumber(ls)
+        elseif c == ' ' or c == '\t' or c == '\b' or c == '\f' then
+            savespace_and_next(ls)
+        else
+            local tk, tkv = llex(ls)
+            ls.template_string_tokens = nil
+            add_to_literal_string(ls, tokens, tk, tkv)
+        end
+    end
+end
+
+local function read_long_string(ls, skip_save)
+    if (!skip_save) then
+        save_and_next(ls)
+    end
     if curr_is_newline(ls) then
+        save(ls, '\n')
         inclinenumber(ls)
     end
     while true do
         local c = ls.current
         if c == END_OF_STREAM then
-            lex_error(ls, 'TK_eof', "unfinished long string")
+            lex_error(ls, 'TK_eof', "unfinished literal string")
         elseif c == '`' then
             save_and_next(ls)
             break
         elseif c == '\n' or c == '\r' then
             save(ls, '\n')
             inclinenumber(ls)
+        elseif (c == "$") then
+            nextchar(ls)
+            if ls.current == "{" then
+                if (!ls.template_string_tokens) then
+                    ls.template_string_tokens = {}
+                end
+                local str = get_string(ls, 1, 0)
+                if str != "" then
+                    add_to_literal_string(ls, nil, "TK_string", get_string(ls, 1, 0))
+                    add_to_literal_string(ls, tokens, "TK_concat")
+                end
+                local tokens, p = read_till_char(ls)
+                for k, v in ipairs(tokens) do
+                    table.insert(ls.template_string_tokens, v)
+                end
+                while (ls.p != p) do
+                    nextchar(ls)
+                end
+                resetbuf(ls)
+                save(ls, "`")
+                local pos = add_to_literal_string(ls, nil, "TK_concat")
+                local str = read_long_string(ls, true)
+                if str != nil then
+                    if str != "" then
+                        add_to_literal_string(ls, nil, "TK_string", str)
+                    else
+                        table.remove(ls.template_string_tokens, pos)
+                    end
+                end
+                return
+            else
+                save(ls, '$')
+                save_and_next(ls)
+            end
         else
             save_and_next(ls)
         end
@@ -418,7 +504,12 @@ local assignment_operators = {
     ["%"] = true
 }
 
-local function llex(ls)
+function llex(ls)
+    local template_string_tokens = ls.template_string_tokens
+    if (template_string_tokens && #template_string_tokens > 0) then
+        ls.linenumber = template_string_tokens[1].line
+        return unpack(table.remove(template_string_tokens, 1))
+    end
     resetbuf(ls)
     while true do
         local current = ls.current
@@ -460,6 +551,9 @@ local function llex(ls)
             end
         elseif current == '`' then
             local str = read_long_string(ls)
+            if str == nil then
+                return llex(ls)
+            end
             return 'TK_string', str
         elseif current == '=' then
             nextchar(ls)

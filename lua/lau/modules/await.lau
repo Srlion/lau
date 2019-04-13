@@ -5,25 +5,32 @@ let AWAIT_FAILED = {
 };
 AWAIT_FAILED.__index = AWAIT_FAILED;
 
-function LAU_AWAIT(promise) {
-    if (!Promise.isPromise(promise))
-        promise = Promise.resolve(promise);
-    let co = coroutine.running();
-    if (!co)
-        error("can't await in non async function", 2);
-    promise:done((...) => {
-        let status, err = coroutine.resume(co, ...);
-        if (status == false)
-            MsgC(Color(137, 222, 255), "[ERROR] ", err, "\n");
-    }, err => {
-        let NEW_AWAIT_FAILED = setmetatable({err: err}, AWAIT_FAILED);
-        let status, err = coroutine.resume(co, NEW_AWAIT_FAILED, err);
-        if (status == false)
-            MsgC(Color(137, 222, 255), "[ERROR] ", err, "\n");
-    });
-    return coroutine.yield(promise);
+let function _error(err) {
+    MsgC(Color(137, 222, 255), "[ERROR] ", err, "\n");
 }
 
+let isPromise = Promise.isPromise;
+let promise_resolve = Promise.resolve;
+let coroutine_running = coroutine.running;
+let coroutine_resume  = coroutine.resume;
+let coroutine_yield   = coroutine.yield;
+function LAU_AWAIT(promise) {
+    if (!isPromise(promise))
+        promise = promise_resolve(promise);
+    let co = coroutine_running();
+    if (!co) error("can't await in non async function", 2);
+    promise:done((...) => {
+        let status, err = coroutine_resume(co, ...);
+        if (status == false) _error(err);
+    }, err => {
+        let NEW_AWAIT_FAILED = setmetatable({err: err}, AWAIT_FAILED);
+        let status, err = coroutine_resume(co, NEW_AWAIT_FAILED);
+        if (status == false) _error(err);
+    });
+    return coroutine_yield(promise);
+}
+
+let getmetatable = getmetatable;
 function AwaitFailed(obj) {
     return getmetatable(obj) == AWAIT_FAILED;
 }

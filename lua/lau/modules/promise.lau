@@ -102,17 +102,23 @@ function Promise:then(onres, onrej) {
 function Promise:catch(onrej) {
     return self.then(self, nil, onreject);
 }
-Promise.resolve = v =>
-    new Promise(res => {res(v);});
-Promise.reject = v =>
-    new Promise((_, rej) => {rej(v);});
-Promise.all = promises => new Promise(
-    (res, rej) => {
+function Promise.resolve(v) {
+    return new Promise(res => {
+        res(v);
+    });
+}
+function Promise.reject(v) {
+    return new Promise((_, rej) => {
+        rej(v);
+    });
+}
+function Promise.all(promises) {
+    return new Promise((res, rej) => {
         let count = table.maxn(promises);
         if (count == 0)
             res({});
         let results = {};
-        for (i = 1; count) {
+        for (i = 1, count) {
             let promise = promises[i];
             if (!Promise.isPromise(promise))
                 promise = Promise.resolve(promise);
@@ -127,8 +133,8 @@ Promise.all = promises => new Promise(
                 });
             });
         }
-    }
-);
+    });
+}
 Promise.isPending   = s => s.__state == PENDING;
 Promise.isRejected  = s => s.__state == REJECTED;
 Promise.isResolved  = s => s.__state == RESOLVED;

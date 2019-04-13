@@ -76,6 +76,10 @@ function AST.function_decl(ast, path, args, body, proto)
    return func_decl(path, body, args, proto.varargs, false, proto.firstline, proto.lastline)
 end
 
+function AST.class_decl(ast, id, parent, constructor, fields, methods)
+    return build("ClassDeclaration", {id = id, parent = parent, constructor = constructor, fields = fields, methods = methods})
+end
+
 function AST.async_function_decl(ast, path, args, body, proto, line)
     local node = ast:function_decl(path, args, body, proto)
     node.kind = "AsyncFunctionDeclaration"
@@ -111,7 +115,12 @@ function AST.expr_index(ast, v, index, line)
 end
 
 function AST.expr_property(ast, v, prop, line)
-    local index = ident(prop, line)
+    local index
+    if (istable(prop)) then
+        index = prop
+    else
+        index = ident(prop, line)
+    end
     return build("MemberExpression", { object = v, property = index, computed = false, line = line })
 end
 
@@ -119,7 +128,7 @@ function AST.await_expr(ast, expr, line)
     return build("AwaitExpression", { expr = expr, line = line })
 end
 
-function AST.new_expr(ast, expr)
+function AST.new_expr(ast, expr, line)
     return build("NewExpression", { expr = expr })
 end
 

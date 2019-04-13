@@ -2,7 +2,7 @@ local operator = include("lau/operators.lua")
 
 local LJ_52 = false
 
-local parse_stmt, parse_func, parse_params, check_semicolon
+local parse_stmt, parse_func, parse_params, check_semicolon, parse_flags
 
 local EndOfBlock = { TK_else = true, TK_elseif = true, TK_end = true, TK_until = true, TK_eof = true, ["}"] = true,
 -- [";"] = true
@@ -270,13 +270,6 @@ function expr_simple(ast, ls)
         ls:next()
         local args, body, proto = parse_body(ast, ls, ls.linenumber, false)
         return ast:expr_function(args, body, proto)
-    elseif tk == "TK_new" then
-        ls:next()
-        local v = expr(ast, ls)
-        if (v.kind != "Identifier" && v.kind != "CallExpression") then
-            err_syntax(ls, "expecting name")
-        end
-        return ast:new_expr(v)
     else
         local vk, v = expr_primary(ast, ls)
         if (v == "arrowFunction") then
@@ -358,6 +351,14 @@ function expr_primary(ast, ls)
             vk, v = "expr", ast:expr_brackets(expr(ast, ls))
             lex_match(ls, ')', '(', line)
         end
+    elseif ls.token == "TK_new" then
+        local line = ls.linenumber
+        ls:next()
+        local exp = expr(ast, ls)
+        if (exp.kind != "Identifier" && exp.kind != "CallExpression") then
+            ls:error(nil, "expecting name")
+        end
+        vk, v = "call", ast:new_expr(exp)
     elseif ls.token == "TK_await" then
         local line = ls.linenumber
         ls:next()
@@ -437,10 +438,10 @@ end
 local function parse_for_num(ast, ls, varname, line, varline)
     lex_check(ls, '=')
     local init = expr(ast, ls)
-    lex_check(ls, ';')
+    lex_check(ls, ',')
     local last = expr(ast, ls)
     local step
-    if lex_opt(ls, ';') then
+    if lex_opt(ls, ',') then
         step = expr(ast, ls)
     else
         step = ast:literal(1, ls.linenumber)
@@ -601,6 +602,76 @@ local function parse_local(ast, ls)
     end
 end
 
+function parse_class(ast, ls, line)
+    ls:next()
+    local class_iden = var_lookup(ast, ls)
+    lex_check(ls, "{")
+    local parent = lex_opt(ls, 'TK_extends') && var_lookup(ast, ls)
+    local constructor, fields, methods = nil, {}, {}
+    while ls.token != "}" do
+        local flags = parse_flags(ast, ls)
+        local iden, line = lex_str(ls)
+        if (ls.token == "(") then
+            local method_iden = iden
+            for _, v in ipairs(methods) do
+                if (v.id.name == method_iden) then
+                    ls:error(nil, "duplicate method declaration '" .. method_iden .. "' in class '" .. class_iden.name .. "'")
+                end
+            end
+            local method
+            do
+                local args, body, proto = parse_body(ast, ls, line, !flags.static)
+                local _iden = iden
+                if (flags.static) then
+                    local static_iden = ast:identifier("__class_statics", line)
+                    _iden = ast:expr_property(static_iden, _iden, line)
+                    local self_iden = ast:identifier("self", line)
+                    local exp = ast:identifier(class_iden.name, line)
+                    table.insert(body, 1,
+                        ast:local_decl({self_iden}, {exp}, "=", line)
+                    )
+                end
+                _iden = ast:expr_property(ast:identifier(class_iden.name, line), _iden, line)
+                method = ast:function_decl(_iden, args, body, proto)
+            end
+            if (method_iden == class_iden.name) then
+                if (constructor) then
+                    ls.linenumber = line
+                    ls:error(nil, "duplicate constructor definition for class '" .. method_iden .. "'")
+                end
+                if (flags.static) then
+                    ls:error(nil, "constructor for '" .. method_iden .. "' is marked as 'static'")
+                end
+                constructor = method
+            else
+                table.insert(methods, method)
+            end
+        elseif ls.token == "=" then
+            if (table.Count(flags) > 0 && !flags.static) then
+                ls:error(nil, "unexpected identifier in class declaration")
+            end
+            local field = iden
+            if (flags.static) then
+                local static_iden = ast:identifier("__class_statics", line)
+                field = ast:expr_property(static_iden, field, line)
+            end
+            field = ast:expr_property(ast:identifier(class_iden.name, line), field, line)
+            local line = ls.linenumber
+            lex_check(ls, "=")
+            local exp = expr(ast, ls)
+            local field_ast = ast:assignment_expr({field}, {exp}, "=", line)
+            field_ast.static = flags.static
+            table.insert(fields, field_ast)
+            check_semicolon(ls, true)
+        else
+            ls:error(nil, "unexpected '" .. ls.token2str(ls.token) .. "' in class declaration")
+        end
+    end
+    ls:next()
+    ls.skip_semicolon = true
+    return ast:class_decl(class_iden, parent, constructor, fields, methods)
+end
+
 function parse_func(ast, ls, line)
     local needself = false
     ls:next() -- Skip 'function'.
@@ -681,6 +752,21 @@ end
 
 -- Parse a statement. Returns the statement itself and a boolean that tells if it
 -- must be the last one in a chunk.
+function parse_flags(ast, ls)
+    local flags = {}
+    local flags_names = {"let", "static", "async"}
+    while (table.HasValue(flags_names, ls.token2str(ls.token))) do
+        local token = ls.token2str(ls.token)
+        if (flags[token]) then
+            ls:error(nil, "duplicate flag '", token, "'")
+        else
+            flags[token] = true
+        end
+        ls:next()
+    end
+    return flags
+end
+
 function parse_stmt(ast, ls)
     local token = ls.token
     local line = ls.linenumber
@@ -703,6 +789,8 @@ function parse_stmt(ast, ls)
         stmt = parse_repeat(ast, ls, line)
     elseif token == "TK_async" then
         stmt = parse_async_func(ast, ls, line)
+    elseif token == "TK_class" then
+        stmt = parse_class(ast, ls, line)
     elseif token == "TK_function" then
         stmt = parse_func(ast, ls, line)
     elseif token == "TK_let" then

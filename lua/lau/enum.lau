@@ -1,0 +1,35 @@
+return (__display, __debug) => {
+	let ENUM = {};
+	let debug_getinfo = debug.getinfo;
+	return ENUM, (_enum, display = __display, debug = __debug) => {
+		let __tostring;
+		__tostring = s => {
+			let func = debug_getinfo(2, "f").func;
+			if (func == print || func == MsgC || func == Msg)
+				return debug(s);
+			else
+				return display(s);
+		};
+		let enum = {
+			key: _enum
+		};
+		enum.__eq = () => true;
+		enum.__tostring = __tostring;
+		enum.__concat = (v1, v2) => {
+			if (v1 == enum)
+				return tostring(v1) .. v2;
+			else
+				return v1 .. tostring(v2);
+		};
+		setmetatable(enum, {
+			__call(s, value) {
+				return setmetatable({key: s.key, value: value}, s);
+			},
+			__tostring: __tostring,
+			__eq: enum.__eq,
+			__concat: enum.__concat
+		});
+		ENUM[_enum] = enum;
+		return enum;
+	};
+};

@@ -6,7 +6,6 @@ if _G[debug.getinfo(1).short_src] then return end _G[debug.getinfo(1).short_src]
 lau = {}
 
 include("lau/modules/array.lua")
-LAU_ASYNC = include("lau/modules/async.lua")
 local parse = include("lau/parser.lua")
 local lex_setup = include("lau/lexer.lua")
 local generator = include("lau/test_generator.lua")
@@ -55,49 +54,43 @@ end
 function lau.include_file(fileName, path)
     path = path || "LUA"
     local code = lau.compile(fileName, "LUA")
-    file.Write("tesst.txt", code)
+    -- file.Write("tesst.txt", code)
+    -- PrintType(code)
     return CompileString(code, fileName)()
 end
 
 print("\n\n\n\n\n\n\n\n\n\n\n-----------------------------------")
 -- local ast = lau.compile_string("let s = ss")
 -- PrintType(ast.body[1].right[1].body[1])
-do
-    local meta = getmetatable( "" )
-    local string = string
-    local isnumber = isnumber
-    local len = string.len
-    local sub = string.sub
-    function meta:__index( key )
-        return string[ key ] ||
-            ( key == "length" && len( self ) ) ||
-            ( isnumber( key ) && sub( self, key, key ) ) ||
-            error( "attempt to index a string value with bad key ('" .. tostring( key ) .. "' is not part of the string library)", 2 )
-    end
-end
 
-lau.include_file("lau/modules/await.lau")
-lau.include_file("lau/modules/promise.lau")
+local lex = lau.include_file("lau/lexer/mod.lau")
+local ls = lex("test.lau")
+-- print(string.match("sss", "^(.*)[\r\n]"), true);
 
-local ast = lau.compile("test.lau", "LUA")
-PrintType(ast)
-file.Write("test.txt", ast)
-CompileString(ast, "test.lau")()
+-- lau.include_file("lau/modules/async.lau")
+-- lau.include_file("lau/modules/tenary.lau")
+-- lau.include_file("lau/modules/promise.lau")
+-- lau.include_file("lau/modules/await.lau")
+
+-- local ast = lau.compile("test.lau", "LUA")
+-- PrintType(ast)
+-- file.Write("test.txt", ast)
+-- CompileString(ast, "test.lau")()
 
 local function startBench()
     local bench = include("bench.lua")
     print("\n\n\n\n\n------------------")
+    jit.off();
     for i = 1, 6 do
         print()
         bench.Compare({
             function()
-
             end,
             function()
-
             end
-        }, 999991)
+        }, 99999)
     end
+    jit.on();
     print("\n------------------")
 end
 concommand.Add("a", startBench)

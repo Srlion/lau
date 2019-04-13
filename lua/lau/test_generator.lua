@@ -15,7 +15,7 @@ local rep = string.rep
 local find = string.find
 local function SetLine(str, new_str, line)
     local len, st, en
-    len, st, en = str.length, 0, 0
+    len, st, en = #str, 0, 0
     for i = 1, line do
         en = find(str, "\n", en + 1, true)
         if (! en) then
@@ -247,7 +247,7 @@ function ExpressionRule:ConcatenateExpression(node)
         end)
         if (k != terms_n) then
             local value = v.value
-            self:set_line((value and char_isdigit(value) and " " or "") .. "..", v.line)
+            self:add_line_2(" ..", v.line)
         end
     end
     return "", cat_prio
@@ -311,23 +311,26 @@ function ExpressionRule:TenaryExpression(node)
     self:add_line_2("(")
     self:expr_emit(node.condition)
     self:add_line_2("&&")
-    self:add_line_2("{")
+    self:add_line_2("LAU_TENARY(")
     self:expr_emit(node.left)
-    self:add_line_2("}||")
-    self:add_line_2("{")
+    self:add_line_2(")||")
+    self:add_line_2("LAU_TENARY(")
     self:expr_emit(node.right)
-    self:add_line_2("})[1]")
+    self:add_line_2("))[1]")
     return "", operator.ident_priority
 end
 
 function ExpressionRule:NewExpression(node)
     local expr = node.expr
     local add_iden
+    local iden
     if (expr.kind == "CallExpression") then
+        iden = expr.callee.name
         add_iden = function()
             self:expr_emit(expr.callee)
         end
     else
+        iden = expr.name
         add_iden = function()
             self:expr_emit(expr)
         end
@@ -336,13 +339,10 @@ function ExpressionRule:NewExpression(node)
     add_iden()
     self:add_line_2(")&&")
     add_iden()
-    self:add_line_2([[.__new||error("can't create a new instance of '" .. type(]])
+    self:add_line_2(format([[.%s||error("can't create a new instance of '" .. type(]], iden))
     add_iden()
-    self:add_line_2([[) .. "'")]])
-    self:add_line_2(")(")
-    add_iden()
+    self:add_line_2([[) .. "'"))(]])
     if (expr.kind == "CallExpression" and #expr.arguments > 0) then
-        self:add_line_2(",")
         self:expr_list_2(expr.arguments)
     end
     self:add_line_2(")")
@@ -427,6 +427,38 @@ function StatementRule:FunctionDeclaration(node)
     end)
     add_default_values(self, default_values)
     self:add_section_2(node, node.body)
+end
+
+function StatementRule:ClassDeclaration(node)
+    local class_iden = node.id.name
+    self:expr_emit(node.id)
+    self:add_line_2("={__class_statics = {}}")
+    if (node.constructor) then
+        local ast = self.ast
+        local constructor = node.constructor
+        table.remove(constructor.params, 1)
+        local line = constructor.line
+        local self_iden = ast:identifier("self", line)
+        local setmeta_iden = ast:identifier("setmetatable", line)
+        local args = {
+            ast:expr_table({}, line, line),
+            ast:identifier(class_iden, line)
+        }
+        local exp = ast:expr_function_call(setmeta_iden, args, line)
+        table.insert(constructor.body, 1,
+            ast:local_decl({self_iden}, {exp}, "=", line)
+        )
+        exp = ast:identifier("self", constructor.lastline)
+        table.insert(constructor.body,
+            ast:return_stmt({exp}, constructor.lastline)
+        )
+        self:emit(constructor)
+    end
+    self:list_emit(node.fields)
+    self:list_emit(node.methods)
+    self:add_line_2(
+        format([[%s.__index=rawget;setmetatable(%s,{__index=%s.__class_statics,__newindex=%s.__class_statics});]], class_iden, class_iden, class_iden, class_iden)
+    )
 end
 
 function StatementRule:AsyncFunctionDeclaration(node)
