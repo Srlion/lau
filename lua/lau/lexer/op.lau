@@ -5,43 +5,42 @@ let OP, Op = enum(
 );
 
 // Assignment
-Op("Assign", () => "=");
-Op("AddAssign", () => "+=");
-Op("SubAssign", () => "-=");
-Op("DivAssign", () => "/=");
-Op("MulAssign", () => "*=");
-Op("ModAssign", () => "%=");
-Op("ExpAssign", () => "^=");
-Op("Incr", () => "++");
-Op("Decr", () => "--");
+Op("Assign", () => "'='");
+Op("AddAssign", () => "'+='");
+Op("SubAssign", () => "'-='");
+Op("DivAssign", () => "'/='");
+Op("MulAssign", () => "'*='");
+Op("ModAssign", () => "'%='");
+Op("ExpAssign", () => "'^='");
+Op("ConAssign", () => "'..='");
 
 // Arithmetic
-Op("Add", () => "+");
-Op("Sub", () => "-");
-Op("Div", () => "/");
-Op("Mul", () => "*");
-Op("Mod", () => "%");
-Op("Exp", () => "^");
+Op("Add", () => "'+'");
+Op("Sub", () => "'-'");
+Op("Div", () => "'/'");
+Op("Mul", () => "'*'");
+Op("Mod", () => "'%'");
+Op("Exp", () => "'^'");
 
 // Comparison
-Op("Eq", () => "==");
-Op("Ne", () => "!=");
-Op("Gt", () => ">");
-Op("Lt", () => "<");
-Op("GtEq", () => ">=");
-Op("LtEq", () => "<=");
+Op("Eq", () => "'=='");
+Op("Ne", () => "'!='");
+Op("Gt", () => "'>'");
+Op("Lt", () => "'<'");
+Op("GtEq", () => "'>='");
+Op("LtEq", () => "'<='");
 
 // Logical
-Op("LAnd", () => "&&");
-Op("LOr", () => "||");
-Op("Not", () => "!");
+Op("LAnd", () => "'&&'");
+Op("LOr", () => "'||'");
+Op("Not", () => "'!'");
 
 // Misc
-Op("Ellipsis", () => "...");
-Op("Concat", () => "..");
-Op("Cond", () => "?");
-Op("Dot", () => ".");
-Op("Interp", () => "$");
-Op("Len", () => "#");
+Op("Ellipsis", () => "'...'");
+Op("Concat", () => "'..'");
+Op("Cond", () => "'?'");
+Op("Dot", () => "'.'");
+Op("Interp", () => "'$'");
+Op("Len", () => "'#'");
 
 return OP;

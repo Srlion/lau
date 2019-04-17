@@ -1,5 +1,7 @@
 return (__display, __debug) => {
 	let ENUM = {};
+	let tostring = tostring;
+	let setmetatable = setmetatable;
 	let debug_getinfo = debug.getinfo;
 	return ENUM, (_enum, display = __display, debug = __debug) => {
 		let __tostring;
@@ -27,7 +29,8 @@ return (__display, __debug) => {
 			},
 			__tostring: __tostring,
 			__eq: enum.__eq,
-			__concat: enum.__concat
+			__concat: enum.__concat,
+			key: _enum
 		});
 		ENUM[_enum] = enum;
 		return enum;

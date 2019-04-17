@@ -16,10 +16,14 @@ Keyword("Function");
 Keyword("If");
 Keyword("In");
 Keyword("Let");
+Keyword("Local");
 Keyword("New");
 Keyword("Return");
 Keyword("Static");
 Keyword("While");
 Keyword("Do");
+Keyword("Break");
+Keyword("Continue");
+Keyword("Goto");
 
 return KEYWORD;

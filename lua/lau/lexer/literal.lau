@@ -1,6 +1,6 @@
 let enum = lau.include_file("lau/enum.lau");
 let LITERAL, Literal = enum(
-	s => tostring(s.value),
+	s => "'" .. s.value .. "'",
 	s => "Literal(" .. s.key:lower() .. "): " .. s
 );
 

@@ -33,30 +33,24 @@ local function token2str(tok)
 end
 
 local function error_lex(ls, chunkname, tok, line, em, ...)
-    local column = ls.p
-    if (line > 1) then
-        local temp, pos = ls.data:sub(1, column - 1)
-        for i = -1, -math.huge, -1 do
-            pos = temp:find("[\r\n]", i);
-            if (pos) then
-                break;
-            end
-        end
-        column = column - pos;
-    end
     local emfmt = string.format(em, ...)
-    local msg = string.format("%s:%d:%d %s", chunkname, line, column - 1, emfmt)
+    local msg = string.format("%s: %s", chunkname, emfmt)
     if tok then
         msg = string.format("%s near (%s)", msg, tok)
     end
+    msg = msg .. " at line " .. line
     error(msg, 0)
 end
 
 local ReverseEscapes
+local function escape(str)
+    return str:gsub(".", ReverseEscapes)
+end
+
 local function lex_error(ls, token, em, ...)
     local tok
     if token == "TK_string" then
-        tok = ls.save_buf:gsub(".", ReverseEscapes)
+        tok = escape(ls.save_buf)
     elseif token == 'TK_name' || token == 'TK_number' then
         tok = ls.save_buf
     elseif token then
@@ -102,7 +96,9 @@ end
 local function pop(ls)
     local k = ls.p
     local c = strsub(ls.data, k, k)
-    ls.p = k + 1
+    if (ls.n > 1) then
+        ls.p = k + 1
+    end
     ls.n = ls.n - 1
     return c
 end
@@ -302,7 +298,6 @@ local function read_long_comment(ls)
     while true do
         local c = ls.current
         if c == END_OF_STREAM then
-            ls.p = ls.p + 1
             lex_error(ls, "TK_string", "unfinished long comment")
         elseif c == '*' then
             save_and_next(ls)
@@ -389,7 +384,6 @@ local function read_string(ls, delim)
     while ls.current ~= delim do
         local c = ls.current
         if c == END_OF_STREAM then
-            ls.p = ls.p + 1
             lex_error(ls, 'TK_string', "unfinished string")
         elseif c == '\n' || c == '\r' then
             lex_error(ls, 'TK_string', "unfinished string")
@@ -440,7 +434,7 @@ local function llex(ls)
         local current = ls.current
         if char_isident(current) then
             if char_isdigit(current) then // Numeric literal.
-                return Literal.Number(lex_number(ls))
+                return Literal.Number(lex_number(ls)), true
             end
 
             save_and_next(ls)
@@ -483,27 +477,17 @@ local function llex(ls)
             end
             return Op.Assign // ("=")
         elseif current == "+" then
-            local next_char = check_nextchar(ls)
-            if next_char == "=" then // ("+=")
-                nextchar(ls)
+            if nextchar(ls) == "=" then // ("+=")
                 return Op.AddAssign
-            elseif next_char == "+" then // ("++")
-                nextchar(ls)
-                return Op.Incr
             end
-            return Op.Add // ("+")
+            return Op.Add, true // ("+")
         elseif current == "-" then
-            local next_char = check_nextchar(ls)
-            if next_char == "=" then // ("-=")
-                nextchar(ls)
+            if nextchar(ls) == "=" then // ("-=")
                 return Op.SubAssign
-            elseif next_char == "-" then // ("--")
-                nextchar(ls)
-                return Op.Decr
             end
-            return Op.Sub // ("-")
+            return Op.Sub, true // ("-")
         elseif current == "/" then
-            local next_char = check_nextchar(ls)
+            local next_char = nextchar(ls)
             if next_char == "=" then // ("/=")
                 nextchar(ls)
                 return Op.DivAssign
@@ -516,42 +500,42 @@ local function llex(ls)
             end
             return Op.Div // ("/")
         elseif current == ':' then
-            if check_nextchar(ls) == ":" then
-                nextchar(ls)
+            if nextchar(ls) == ":" then
                 return Token.Label // ("::")
             end
-            return Token.Colon // (":")
+            return Token.Colon, true // (":")
         elseif current == "." then
-            if check_nextchar(ls) == '.' then
-                nextchar(ls)
-                if check_nextchar(ls) == "." then
-                    nextchar(ls)
+            if nextchar(ls) == '.' then
+                local next_char = nextchar(ls)
+
+                if next_char == "." then
                     return Op.Ellipsis // ("...")
+                elseif next_char == "=" then
+                    return Op.ConAssign
                 end
-                return Op.Concat // ("..")
+                return Op.Concat, true // ("..")
             end
-            return Op.Dot // (".")
+            return Op.Dot, true// (".")
         elseif current == "&" then
-            if check_nextchar(ls) == "&" then
+            if nextchar(ls) == "&" then
                 nextchar(ls)
                 return Op.LAnd
             end
         elseif current == "|" then
-            if check_nextchar(ls) == "|" then
+            if nextchar(ls) == "|" then
                 nextchar(ls)
                 return Op.LOr
             end
         elseif current == '"' then
             local str = read_string(ls, current)
-            return Literal.String(str) // ("String")
+            return Literal.String(str), true // ("String")
         end
         local eq_op = eq_ops[current]
         if eq_op then
-            if check_nextchar(ls) == "=" then
-                nextchar(ls)
+            if nextchar(ls) == "=" then
                 return eq_op[2]
             end
-            return eq_op[1] // (">")
+            return eq_op[1], true
         end
         local single_char = single_chars[current]
         if single_char then return single_char end
@@ -561,7 +545,9 @@ end
 
 local Lexer = {
     token2str = token2str,
-    error = lex_error,
+    error = function(ls, msg)
+        lex_error(ls, nil, msg)
+    end,
 }
 
 function Lexer.next(ls)
@@ -576,11 +562,22 @@ function Lexer.next(ls)
     return token
 end
 
-function Lexer.lookahead(ls)
-    assert(ls.tklookahead == Token.EOF)
-    ls.tklookahead, ls.tklookaheadval = llex(ls)
-    ls.spaceahead = get_space_string(ls)
-    return ls.tklookahead
+function Lexer:lookahead()
+    local reset = self:fake_llex()
+    local token = self:next()
+    reset()
+    return token
+end
+
+function Lexer:fake_llex()
+    local old_self = table.Copy(self)
+    return function()
+        table.Empty(self)
+        for k, v in pairs(old_self) do
+            self[k], old_self[k] = v, nil
+        end
+        old_self = nil
+    end
 end
 
 local LexerClass = { __index = Lexer }

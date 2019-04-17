@@ -519,17 +519,17 @@ function StatementRule:DoStatement(node)
 end
 
 function StatementRule:WhileStatement(node)
-    self:set_line("while", node.firstline)
+    self:set_line("while(", node.firstline)
     self:expr_emit(node.test)
-    self:add_line_2("do ")
+    self:add_line_2(")do ")
     self:add_section_2(node, node.body)
 end
 
 function StatementRule:RepeatStatement(node)
-    self:add_section("repeat", node.body, true)
-    local test = self:expr_emit(node.test)
-    local until_line = format("until %s", test)
-    self:add_line(until_line)
+    self:set_line("repeat", node.firstline)
+    self:list_emit(node.body)
+    self:set_line("until ", node.lastline)
+    self:expr_emit(node.test)
 end
 
 function StatementRule:BreakStatement(node)

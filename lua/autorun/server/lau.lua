@@ -63,8 +63,26 @@ print("\n\n\n\n\n\n\n\n\n\n\n-----------------------------------")
 -- local ast = lau.compile_string("let s = ss")
 -- PrintType(ast.body[1].right[1].body[1])
 
+local function handle_error(fn, ...)
+    local status, v = pcall(fn, ...)
+
+    if (status == false) then
+        return ErrorNoHalt("[ERROR] " .. v .. "\n")
+    end
+
+    return v
+end
+
 local lex = lau.include_file("lau/lexer/mod.lau")
-local ls = lex("test.lau")
+local parse = lau.include_file("lau/parser/parser.lau")
+local ls = handle_error(lex, "test.lau")
+if (ls) then
+    local tree = handle_error(parse, ls)
+    if (tree) then
+        print(tree)
+    end
+end
+
 -- print(string.match("sss", "^(.*)[\r\n]"), true);
 
 -- lau.include_file("lau/modules/async.lau")
@@ -77,20 +95,36 @@ local ls = lex("test.lau")
 -- file.Write("test.txt", ast)
 -- CompileString(ast, "test.lau")()
 
-local function startBench()
+concommand.Add("a", function()
     local bench = include("bench.lua")
     print("\n\n\n\n\n------------------")
-    jit.off();
     for i = 1, 6 do
         print()
         bench.Compare({
             function()
+                local ls = lex("test.lau")
+                if (ls) then
+                    -- local tree = handle_error(parse, ls)
+                    -- if (tree) then
+                    --     -- print(tree)
+                    -- end
+                end
             end,
             function()
             end
-        }, 99999)
+        }, 9999)
     end
-    jit.on();
     print("\n------------------")
-end
-concommand.Add("a", startBench)
+end)
+
+concommand.Add("a", function()
+    print("\n\n\n\n\n------------------")
+    local shit = os.time()
+    for i = 1, 100 do
+        local ls = lex("test.lau")
+        local tree = parse(ls)
+        -- CompileFile("test.lua")
+    end
+    print(os.time() - shit .. "s")
+    print("\n------------------")
+end)

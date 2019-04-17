@@ -1,50 +1,729 @@
+let operator = include("lau/parser/operator.lua");
+let ast 	 = include("lau/ast/exprs.lua");
+
+let format = string.format;
+
 let lexer = lau.lexer;
 let Keyword = lexer.Keyword;
 let Literal = lexer.Literal;
 let Op = lexer.Op;
 let Token = lexer.Token;
 
-let parse, parse_node, parse_flags, next_is_in, next_is, peek;
-function parse(self) {
-	let tokens = {}
-	while (self.n > 0) {
-        let failed, value = parse_node(self);
-        if (!failed) {
-        	table.insert(tree, value);
-        else
-        	table.insert(errors, value);
-        }
+let is_literal, expr_field, expr_bracket, parse, parse_expr_list,
+	expr_unop, expr_binop, parse_expr, expr_primary, expr_simple, expr_table,
+	parse_stmt, parse_args, parse_body, parse_block, parse_while_stmt,
+	parse_for_stmt, parse_let_stmt, parse_return_stmt, parse_break_stmt,
+	parse_continue_stmt, parse_label_stmt, parse_goto_stmt, parse_func_decl,
+	parse_if_stmt, parse_class_decl, parse_flags, parse_assignment, parse_call_assign,
+	parse_params, parse_ident, consume, expect, next_is, next_is_in, peek;
+
+let self;
+
+let function has_value(t, v) {
+	for (i = 1, #t) {
+		if (t[i] == v) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function is_literal(v) {
+	return Literal[getmetatable(v).key] && true || false;
+}
+
+function expr_field(v) {
+	self:next();
+	let key = parse_ident();
+
+	return ast.expr_property(v, key);
+}
+
+function expr_bracket() {
+    self:next();
+
+    let v = parse_expr();
+    expect(Token.RBracket);
+
+    return v;
+}
+
+function parse(s) {
+	self = s;
+
+	let tree = {};
+	let stmt, is_last = nil, false;
+
+	while (!is_last && self.token != Token.EOF) {
+		stmt, is_last = parse_stmt();
+		tree[#tree + 1] = stmt;
+    }
+
+    if (self.token != Token.EOF) {
+    	expect(Token.EOF);
+	}
+
+    return ast.chunk(tree, self.chunkname);
+}
+
+function parse_expr_list() {
+    let exps = {};
+    exps[1] = parse_expr();
+
+    while (consume(Token.Comma)) {
+    	exps[#exps + 1] = parse_expr();
+    }
+
+    let n = #exps;
+
+    if (n > 0) {
+        exps[n] = ast.set_expr_last(exps[n]);
+    }
+
+    return exps;
+}
+
+function expr_unop() {
+    let tk = self.token;
+
+    if (tk == Op.Not || tk == Op.Sub || tk == Op.Len) {
+        self:next();
+        let v = expr_binop(operator.unary_priority);
+
+        return ast.expr_unop(tk, v);
+    } else {
+        return expr_simple();
     }
 }
-function parse_node(self) {
 
+function expr_binop(limit) {
+	let v  = expr_unop();
+    let op = self.token;
+
+    while (operator.is_binop(op) && operator.left_priority(op) > limit) {
+        self:next();
+        let v2, nextop = expr_binop(operator.right_priority(op));
+        v = ast.expr_binop(op, v, v2);
+        op = nextop;
+    }
+
+    return v, op;
 }
-function parse_flags(self) {
-	let flags = {false, false, false};
-	let allowed_flags = [Keyword.Let, Keyword.Static, Keyword.Async];
-	while (next_is_in(self, allowed_flags)) {
 
+function parse_expr() {
+	return expr_binop(0);
+}
+
+function expr_primary() {
+    let v, vk;
+
+    if (consume(Token.LParens)) {
+        vk, v = "expr", ast.expr_brackets(parse_expr());
+        expect(Token.RParens);
+    } else if (next_is(Token.Ident)) {
+        vk, v = "var", parse_ident();
+    } else if (consume(Keyword.Await)) {
+        vk, v = "call", ast.await_expr(parse_expr());
+    } else {
+    	self:error("unexpected symbol near " .. peek());
+    }
+
+    while (true) {
+        let token = self.token;
+
+        if (token == Op.Dot) {
+        	self:next();
+
+        	if (!next_is_in([Literal, Token.Ident] || next_is(Literal.Nil))) {
+        		self:error(format("unexpected %s, expected <key>", peek()));
+        	}
+
+        	let key = peek();
+        	self:next();
+
+        	if (key == Token.Ident) {
+        		v = ast.expr_property(v, ast.identifier(key));
+        	} else {
+        		v = ast.expr_index(v, ast.literal(key));
+        	}
+
+            vk = "indexed";
+        } else if (token == Token.LBracket) {
+            let key = expr_bracket();
+            vk, v = "indexed", ast.expr_index(v, key);
+        } else if (token == Token.Colon) {
+            self:next();
+
+            let key = parse_ident();
+            let args = parse_args();
+            vk, v = "call", ast.expr_method_call(v, key, args);
+        } else if (token ==  Token.LParens) {
+            let args = parse_args();
+            vk, v = "call", ast.expr_function_call(v, args);
+        } else {
+            break;
+        }
+    }
+
+    return v, vk;
+}
+
+function expr_simple() {
+	let is_async;
+
+    if (consume(Keyword.Async)) {
+    	if (!next_is(Keyword.Function)) {
+    		expect(Keyword.Function);
+    	}
+
+    	is_async = true;
+    }
+
+    let token = peek();
+
+    if (is_literal(token)) {
+    	self:next();
+
+    	return ast.literal(token);
+    } else if (token == Op.Ellipsis) {
+        if (!self.varargs) {
+        	self:error("cannot use '...' outside a vararg function");
+        }
+
+        return ast.expr_vararg();
+    } else if (token == Token.LBrace) {
+        return expr_table();
+    } else if (token == Keyword.Function) {
+        self:next();
+        let params, default, body = parse_body();
+
+        return ast.expr_function(body, params, default, is_async);
+    } else {
+        return expr_primary();
+    }
+
+    self:next();
+
+    return e;
+}
+
+function expr_table() {
+    expect(Token.LBrace);
+    let kvs = {};
+
+    while (!next_is(Token.RBrace)) {
+        let key, val, is_async;
+
+        if (consume(Keyword.Async)) {
+            is_async = true;
+            if (!next_is_in([Literal, Token.Ident, Keyword.Function])) {
+            	self:error(format("unexpected %s, expected function", peek()));
+            }
+        }
+
+        if (next_is(Token.LBracket)) {
+        	if (self:lookahead() == Literal.Nil) {
+        		self:error("unexpected 'nil' key");
+        	}
+
+        	key = expr_bracket();
+        	expect(Token.Colon);
+        } else if (next_is_in([Literal, Token.Ident])) {
+        	if (next_is(Literal.Nil)) {
+        		self:error("unexpected 'nil' key");
+        	}
+
+        	let lookahead = self:lookahead();
+
+        	if (is_async || lookahead == Token.LParens) {
+        		key = ast.literal(peek());
+        		self:next();
+
+        		let params, default, body = parse_body(needself);
+        		val = ast.expr_function(body, params, default, is_async);
+        	} else if (lookahead == Token.Colon) {
+        		key = ast.literal(peek());
+        		self:next();
+        		expect(Token.Colon);
+        	}
+        }
+
+        if (!val) {
+			val = parse_expr();
+        }
+
+        kvs[#kvs + 1] = {
+        	key: key,
+        	value: val
+        };
+
+        if (!consume(Token.Comma)) {
+        	break;
+        }
+    }
+
+    expect(Token.RBrace);
+
+    return ast.expr_table(kvs);
+}
+
+function parse_stmt() {
+	let flags = parse_flags();
+
+	if (has_value(flags, true) && !next_is_in([Keyword.Function, Keyword.Class, Keyword.Enum])) {
+		self:error("unexpected flags");
+	}
+
+	let token = self.token;
+
+	if (token == Keyword.Function) {
+		return parse_func_decl(flags);
+	} else if (token == Keyword.Class) {
+		return parse_class_decl(flags);
+	} else if (token == Keyword.Enum) {
+		self:error("Enum is not implemented yet");
+	} else if (token == Keyword.If) {
+		return parse_if_stmt();
+	} else if (token == Keyword.While) {
+		return parse_while_stmt();
+	} else if (token == Keyword.For) {
+		return parse_for_stmt();
+	} else if (token == Keyword.Let) {
+		return parse_let_stmt();
+	} else if (token == Keyword.Return) {
+		return parse_return_stmt(), true;
+	} else if (token == Keyword.Break) {
+		return parse_break_stmt(), true;
+	} else if (token == Keyword.Continue) {
+		return parse_continue_stmt(), true;
+	} else if (token == Token.Label) {
+		return parse_label_stmt();
+	} else if (token == Keyword.Goto) {
+		return parse_goto_stmt();
+	}
+
+	return parse_call_assign();
+}
+
+function parse_args() {
+	let line = self.lastline;
+
+	expect(Token.LParens);
+
+	if (line != self.linenumber) {
+		self:error("ambiguous syntax (function call x new statement)");
+	}
+
+	let args;
+	if (!next_is(Token.RParens)) {
+		args = parse_expr_list();
+	}
+
+	expect(Token.RParens);
+
+	return args;
+}
+
+function parse_body(needself) {
+	let b_varargs = self.varargs;
+	self.varargs = false;
+	let params, default, vararg = parse_params(needself);
+	self.varargs = vararg;
+	let body = parse_block();
+	self.varargs = b_varargs;
+	return params, default, body;
+}
+
+function parse_block() {
+	expect(Token.LBrace);
+	let body = {};
+
+	let stmt, is_last = nil, false;
+	while (!is_last && !next_is_in([Token.EOF, Token.RBrace])) {
+		stmt, is_last = parse_stmt();
+		body[#body + 1] = stmt;
+	}
+
+	expect(Token.RBrace);
+
+	return body;
+}
+
+function parse_while_stmt() {
+	self:next();
+
+	let cond = parse_expr();
+	let body =  parse_block();
+
+	return ast.while_stmt(cond, body);
+}
+
+function parse_for_stmt() {
+	self:next();
+	expect(Token.LParens);
+
+	let var = parse_ident();
+	expect(Op.Assign);
+
+	let init = parse_expr();
+	expect(Token.Comma);
+
+	let last = parse_expr();
+	let step;
+
+	if (consume(Token.Comma)) {
+		step = parse_expr();
+	}
+
+	expect(Token.RParens);
+
+	let body = parse_block();
+
+	return ast.for_stmt(var, init, last, step, body);
+}
+
+function parse_let_stmt() {
+	self:next();
+
+	let locals = {};
+
+	repeat
+		locals[#locals + 1] = parse_ident();
+	until !consume(Token.Comma);
+
+	let exps;
+
+	if (!next_is(Token.Semicolon)) {
+		expect(Op.Assign);
+
+		exps = parse_expr_list();
+	}
+
+	expect(Token.Semicolon);
+
+	return ast.local_decl(locals, exps);
+}
+
+function parse_return_stmt() {
+	self:next();
+
+	let exps;
+
+	if (!next_is(Token.Semicolon)) {
+		exps = parse_expr_list();
+	}
+
+	expect(Token.Semicolon);
+
+	return ast.return_stmt(exps);
+}
+
+function parse_break_stmt() {
+	self:next();
+
+	expect(Token.Semicolon);
+
+	return ast.break_stmt();
+}
+
+function parse_continue_stmt() {
+	self:next();
+
+	expect(Token.Semicolon);
+
+	return ast.continue_stmt();
+}
+
+function parse_label_stmt() {
+	self:next();
+
+	let label = parse_ident();
+	expect(Token.Label);
+	expect(Token.Semicolon);
+
+	return ast.label_stmt(label);
+}
+
+function parse_goto_stmt() {
+	self:next();
+
+	let label = parse_ident();
+	expect(Token.Semicolon);
+
+	return ast.goto_stmt(label);
+}
+
+function parse_func_decl(flags) {
+	if (flags[2]) {
+		self:error("'static' flag is not valid for function declaration");
+	}
+
+	self:next();
+
+	let need_self = false;
+	let v = parse_ident();
+
+	while (next_is(Op.Dot)) {
+		v = expr_field(v);
+	}
+
+	if (next_is(Token.Colon)) {
+		needself = true;
+		v = expr_field(v);
+	}
+
+	let params, default, body = parse_body(needself);
+
+	return ast.function_decl(flags[1], v, body, params, default, flags[3]);
+}
+
+function parse_if_stmt() {
+	self:next();
+
+	let cond = parse_expr();
+	let body = parse_block();
+	let else_body;
+
+	if (consume(Keyword.Else)) {
+		if (next_is(Keyword.If)) {
+			else_body = [parse_if_stmt()];
+		} else {
+			else_body = parse_block();
+		}
+	}
+
+	return ast.if_stmt(cond, body, else_body);
+}
+
+function parse_class_decl(flags) {
+	self:error("class is not implemented yet");
+
+	if (flags[2] || flags[3]) {
+		self:error("unexpected flag(s) for class declaration");
+	}
+
+	self:next();
+
+	let c_ident = parse_ident(); // class ident
+
+	let parent;
+	if (next_is(Keyword.Extends)) {
+		self:next();
+
+		parent = parse_ident();
+	}
+
+	expect(Token.LBrace);
+
+	let ctor, fields, methods = nil, {}, {};
+
+	while (!next_is(Token.RBrace)) {
+		let m_flags = parse_flags(); // method/field flags
+		let ident = parse_ident();
+
+		if (next_is(Op.Assign)) {
+			if (m_flags[1] || m_flags[3]) {
+				self:error("unexpected flag(s) for identifier in class");
+			}
+
+			self:next();
+		} else if (next_is(Token.LParens)) {
+
+		} else {
+			self:error(format("unexpected %s in class", self.token));
+		}
 	}
 }
-function next_is_in(self, possibilities) {
-	for (_, possibility in ipairs(possibilities)) {
-		if (next_is(self, possibility)) {
+
+function parse_flags() {
+	let flags = [false, false, false];
+	let allowed_flags = [Keyword.Local, Keyword.Static, Keyword.Async];
+	while (next_is_in(allowed_flags)) {
+		let token = peek();
+		if (token == Keyword.Local) {
+			if (flags[1]) {
+				self:error("duplicate flag 'local'");
+			} else if (flags[2] || flags[3]) {
+				self:error("wrong flag order");
+			}
+
+			flags[1] = true;
+		} else if (token == Keyword.Static) {
+			if (flags[2]) {
+				self:error("duplicate flag 'static'");
+			} else if (flags[3]) {
+				self:error("wrong flag order");
+			}
+
+			flags[2] = true;
+		} else if (token == Keyword.Async) {
+			if (flags[3]) {
+				self:error("duplicate flag 'async'");
+			}
+
+			flags[3] = true;
+		}
+
+		self:next();
+	}
+
+	return flags;
+}
+
+function parse_assignment(vlist, var, vk) {
+	if (vk != "var" && vk != "indexed") {
+		self:error("syntax error near " .. peek());
+	}
+
+	vlist[#vlist + 1] = var;
+
+    if (consume(Token.Comma)) {
+        let n_var, n_vk = expr_primary();
+
+        return parse_assignment(vlist, n_var, n_vk);
+    } else {
+    	let assigning = next_is_in([
+    		Op.Assign,
+    		Op.AddAssign,
+    		Op.SubAssign,
+    		Op.DivAssign,
+    		Op.MulAssign,
+    		Op.ModAssign,
+    		Op.ExpAssign,
+    		Op.ConAssign
+    	]);
+
+    	if (!assigning) {
+    		self:error(format("unexpected %s, expected assignment", peek()));
+    	}
+
+    	let op = tostring(self.token);
+    	op = op:sub(2, #op / 2 + 0.5);
+
+    	self:next();
+
+        let exps = parse_expr_list();
+    	expect(Token.Semicolon);
+
+        return ast.assignment_expr(op, vlist, exps);
+    }
+}
+
+function parse_call_assign() {
+	let var, vk = expr_primary();
+
+    if (vk == "call") {
+    	expect(Token.Semicolon);
+
+        return ast.statement_expr(var);
+    } else {
+        return parse_assignment({}, var, vk);
+    }
+}
+
+function parse_params(needself) {
+	expect(Token.LParens);
+	let args, default, vararg = {}, {}, false;
+
+	if (needself) {
+		args[1] = "self";
+	}
+
+	if (!next_is(Token.RParens)) {
+		repeat
+			if (next_is(Token.Ident)) {
+				let ident = parse_ident();
+				args[#args + 1] = ident;
+
+				if (consume(Op.Assign)) {
+					let value = parse_expr();
+					default[#default + 1] = {
+						ident: ident,
+						value: value
+					};
+				}
+			} else if (consume(Op.Ellipsis)) {
+				vararg = true;
+				args[#args + 1] = ast.expr_vararg();
+				break;
+			} else {
+				self:error("expected identifier or '...'");
+			}
+		until !consume(Token.Comma);
+	}
+
+	expect(Token.RParens);
+
+	return args, default, vararg;
+}
+
+function parse_ident() {
+	let token = self.token;
+	if (token == Token.Ident) {
+		self:next();
+
+		return ast.identifier(token);
+	} else {
+		self:error(format("unexpected %s, expected identifier", token));
+	}
+}
+
+function consume(value) {
+	let token = self.token;
+
+	if (token == value) {
+		self:next();
+		return token;
+	}
+
+	return false;
+}
+
+function expect(expected) {
+	if (self.token == expected) {
+		self:next();
+		return true;
+	} else {
+		self:error(format("unexpected %s, expected %s", self.token, expected));
+	}
+}
+
+function next_is(expected) {
+	let token = self.token;
+
+	return token == expected;
+}
+
+function next_is_in(possibilities) {
+	let token = self.token;
+
+	for (i = 1, #possibilities) {
+		let v = possibilities[i];
+
+		if (v == Literal) {
+			if (is_literal(token)) {
+				return true;
+			}
+		} else if (v == token) {
             return true;
         }
 	}
+
 	return false;
 }
-function next_is(self, expected) {
-	let failed, token = peek(self);
-	if (!failed)
-		return token == expected;
-	else
-		return false, token;
-}
-function peek(self) {
+
+function peek(no_error) {
 	let token = self.token;
-	if (token == Token.EOF)
-		return false, "Unexpected EOF";
-	else
-		return true, token;
+
+	if (token == Token.EOF) {
+		if (no_error) {
+			return;
+		}
+		self:error("unexpected EOF");
+	} else {
+		return token;
+	}
 }
+
+return parse;

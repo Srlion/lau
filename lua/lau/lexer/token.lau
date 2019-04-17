@@ -20,8 +20,6 @@ TOKEN, Token = enum(
         Msg("Token(");
         if (Check_Tokens[s]) {
             Msg(tostring(Check_Tokens[s]));
-        } else if (s == Keyword || s == Literal || s == Op) {
-            Msg(s.value);
         } else if (s == Ident) {
             Msg("[ident: ", s.value, "]");
         }
@@ -40,10 +38,7 @@ Token("LBracket", () => "'['");
 Token("RBracket", () => "']'");
 Token("RBrace", () => "'}'");
 Token("RParens", () => "')'");
-Token("Keyword", s => tostring(s.value));
-Token("Literal", s => tostring(s.value));
-Token("Ident", s => tostring(s.value));
-Token("Op", s => tostring(s.value));
+Token("Ident", s => "'" .. tostring(s.value) .. "'");
 Token("EOF", () => "EOF");
 
 return TOKEN;
