@@ -266,14 +266,14 @@ function parse_simple_expr()
     	self:next()
 
     	return ast.literal(token)
-    elseif token == Op.Ellipsis then
-        if not self.varargs then
-        	self:error("cannot use '...' outside a vararg function")
-        end
-
+	elseif token == Op.Ellipsis then
 		if self:next() == Token.Arrow then
 			return parse_arrow_func_expr(ast.expr_vararg(), true)
 		end
+
+        if not self.varargs then
+        	self:error("cannot use '...' outside a vararg function", self.lastline)
+        end
 
         return ast.expr_vararg()
     elseif token == Token.LBrace then

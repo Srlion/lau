@@ -23,7 +23,7 @@ do {
 
         let co = coroutine_running();
 
-        promise:done((...) => {
+        promise:done(... => {
             let status, err = coroutine_resume(co, ...);
             if status == false {
                 error(err);
