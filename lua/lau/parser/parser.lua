@@ -325,15 +325,16 @@ function parse_table_expr()
         	key = parse_bracket_expr()
         	expect(Token.Colon)
         elseif is_literal(token) or token == Token.Ident then
-        	if next_is(Literal.Nil) then
+        	if token == Literal.Nil then
         		self:error("unexpected 'nil' key")
         	end
 
-        	val = ast.literal(token)
 
-			if self:next() == Token.Colon then
+			if self:lookahead() == Token.Colon then
 				self:next()
-				key, val = val, nil
+				self:next()
+
+				key = ast.literal(token)
 			end
         end
 
