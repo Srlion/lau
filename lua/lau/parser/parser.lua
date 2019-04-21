@@ -32,7 +32,7 @@ end
 
 local consume, expect, next_is, next_is_in, peek
 
-local parse, parse_args, parse_body, parse_block, parse_flags, parse_assignment,
+local parse, parse_args, parse_body, parse_block, parse_assignment,
 	parse_call_assign, parse_params, parse_ident
 
 local parse_expr, parse_expr_list, parse_binop_expr, parse_unop_expr, parse_primary_expr,
@@ -616,37 +616,35 @@ function parse_class_stmt(is_local)
 	local c_body = {}
 
 	while not next_is(Token.RBrace) do
-		local m_flags = parse_flags()
+		local is_static = false
+
+		if peek() == Keyword.Static then
+			is_static = true
+			self:next()
+		end
+
 		local ident = parse_ident()
 
 		if next_is(Op.Assign) then
-			if m_flags[1] then
-				self:error("unexpected flag(s) for identifier in class")
-			end
-
 			self:next()
 
 			ident.field = true
-			ident.is_static = m_flags[2]
+			ident.is_static = is_static
 			ident.body = parse_expr()
 
 			table.insert(c_body, ident)
 
 			expect(Token.Semicolon)
 		elseif next_is(Token.LParens) then
-			if m_flags[1] then
-				self:error("unexpected 'local' flag for function in class")
-			end
-
 			local params, default, body = parse_body(true)
-			local method = ast.function_decl(false, ident, body, params, default, body.is_async, m_flags[2])
+			local method = ast.function_decl(false, ident, body, params, default, body.is_async, is_static)
 
 			if c_ident.value == ident.value then
 				if ctor then
 					self:error("duplicate constructor definition for class " .. ident)
 				end
 
-				if m_flags[2] then
+				if is_static then
 					self:error(format("constructor for %s is marked 'static'", ident))
 				end
 
@@ -722,23 +720,6 @@ function parse_block()
 	expect(Token.RBrace)
 
 	return body
-end
-
-function parse_flags()
-	local flags = {false, false}
-	local token = peek()
-
-	if token == Keyword.Local then
-		flags[1] = true
-		token = self:next()
-	end
-
-	if token == Keyword.Static then
-		flags[2] = true
-		token = self:next()
-	end
-
-	return flags
 end
 
 local assignments_ops = {
