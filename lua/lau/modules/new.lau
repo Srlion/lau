@@ -1,0 +1,13 @@
+let istable, isfunction = istable, isfunction;
+function LAU_NEW(c, n, ...) {
+	if !istable(c) {
+		error("can't create an instance of '" .. n .. "' (not class)", 2);
+	}
+
+	let new_fn = c[n];
+	if !isfunction(new_fn) {
+		error("can't create an instance of '" .. n .. "' (no constructor)", 2);
+	}
+
+	return new_fn(...);
+}

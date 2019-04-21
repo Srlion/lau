@@ -4,27 +4,22 @@ local bit = bit
 -- (left priority) * 256 + (right priority)
 -- modulus is your friend
 local binop = {
-    ['+']  = 6 * 256 + 6, ['-']  = 6 * 256 + 6,
-    ['*']  = 7 * 256 + 7, ['/']  = 7 * 256 + 7,
-    ['%']  = 7 * 256 + 7, ['^']  = 10* 256 + 9,
-    ['=='] = 3 * 256 + 3, ['!='] = 3 * 256 + 3,
-    ['<']  = 3 * 256 + 3, ['>'] = 3 * 256 + 3,
-    ['>='] = 3 * 256 + 3, ['<='] = 3 * 256 + 3,
-    ['..'] = 5 * 256 + 4, -- POW CONCAT (right associative)
-    ['&&'] = 2 * 256 + 2,
-    ['||'] = 1 * 256 + 1
+    ["'+'"]  = 6 * 256 + 6, ["'-'"]  = 6 * 256 + 6,
+    ["'*'"]  = 7 * 256 + 7, ["'/'"]  = 7 * 256 + 7,
+    ["'%'"]  = 7 * 256 + 7, ["'^'"]  = 10* 256 + 9,
+    ["'=='"] = 3 * 256 + 3, ["'!='"] = 3 * 256 + 3,
+    ["'<'"]  = 3 * 256 + 3, ["'>'"] = 3 * 256 + 3,
+    ["'>='"] = 3 * 256 + 3, ["'<='"] = 3 * 256 + 3,
+    ["'..'"] = 5 * 256 + 4, -- POW CONCAT (right associative)
+    ["'&&'"] = 2 * 256 + 2,
+    ["'||'"] = 1 * 256 + 1
 }
-
-for k, v in pairs(binop) do
-    binop["'" .. k .. "'"] = v
-end
 
 local unary_priority = 8
 
 -- Pseudo priority of a simple identifier. Should be higher than any
 -- others operator's priority.
 local ident_priority = 16
-
 local function is_binop(op)
     return binop[tostring(op)]
 end

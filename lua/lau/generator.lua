@@ -1,55 +1,10 @@
---
--- luacode-generator.lua
---
--- This file is part of the LuaJIT Language Toolkit.
---
--- Module to generate the Lua code that corresponds to a given Lua AST Tree.
--- Can be used as an alternative to the bytecode generator.
-
-local operator = include("lau/operators.lua")
-
 local strbyte, strsub = string.byte, string.sub
 
-local function table_to_true(tbl)
-    for k, v in ipairs(tbl) do
-        tbl[v] = true
-        tbl[k] = nil
-    end
-    return tbl
-end
-
-local LuaReservedKeyword = table_to_true{
-    'while', 'for', 'repeat',
-    'in', 'break', 'until',
-    'function', 'goto', 'if', 'else',
-    'not', 'and', 'or',
-    'return', 'do',
-    'true', 'false', 'nil',
-    -- glua
-    'continue',
-    -- lau
-    'let', 'async', 'await', 'new'
-}
-
-local ASCII_0, ASCII_9 = 48, 57
-local ASCII_a, ASCII_z = 97, 122
-local ASCII_A, ASCII_Z = 65, 90
-
-local function char_isletter(c)
-    local b = strbyte(c)
-    if b >= ASCII_a and b <= ASCII_z then
-        return true
-    elseif b >= ASCII_A and b <= ASCII_Z then
-        return true
-    else
-        return (c == '_')
-    end
-end
-
-local function char_isdigit(c)
-    local b = strbyte(c)
-    return b >= ASCII_0 and b <= ASCII_9
-end
+local lexer   = lau.lexer
+local Keyword = lexer.Keyword
+local Literal = lexer.Literal
+local Op 	  = lexer.Op
+local Token   = lexer.Token
 
 local function replace_cc(c)
     local esc = {
@@ -63,539 +18,585 @@ local function escape(s)
     return string.gsub(s, "%c", replace_cc)
 end
 
-local StatementRule = { }
-local ExpressionRule = { }
-
 local concat = table.concat
 local format = string.format
-
-local function is_string(node)
-    return node.kind == "Literal" and type(node.value) == "string"
-end
 
 local function is_const(node, val)
     return node.kind == "Literal" and node.value == val
 end
 
-local function is_literal(node)
-    local k = node.kind
-    return (k == "Literal" or k == "Table")
-end
-
-local function string_is_ident(str)
-    local c = strsub(str, 1, 1)
-    if c == '' or not char_isletter(c) then
-        return false
-    end
-    for k = 2, #str do
-        c = strsub(str, k, k)
-        if not char_isletter(c) and not char_isdigit(c) then
-            return false
-        end
-    end
-    return not LuaReservedKeyword[str]
-end
-
 local function comma_sep_list(ls, f)
-    local strls
-    if f then
-        strls = { }
-        for k = 1, #ls do strls[k] = f(ls[k]) end
-    else
-        strls = ls
-    end
-    return concat(strls, ", ")
-end
-
-local function as_parameter(node)
-    return node.kind == "Vararg" and "..." or node.name
-end
-
-function ExpressionRule:Identifier(node)
-    local name = node.name
-    if (node.bracketed) then
-        name = "(" .. name .. ")"
-    end
-    return name, operator.ident_priority
-end
-
-function ExpressionRule:Literal(node)
-    local val = node.value
-    local str = type(val) == "string" and format("\"%s\"", escape(val)) or tostring(val)
-    if (node.bracketed) then
-        str = "(" .. str .. ")"
-    end
-    return str, operator.ident_priority
-end
-
-function ExpressionRule:MemberExpression(node)
-    local object, prio = self:expr_emit(node.object)
-    if prio < operator.ident_priority then
-        object = "(" .. object .. ")"
-    end
-    local exp
-    if node.computed then
-        local prop = self:expr_emit(node.property)
-        exp = format("%s[%s]", object, prop)
-    else
-        exp = format("%s.%s", object, node.property.name)
-    end
-    return exp, operator.ident_priority
-end
-
-function ExpressionRule:Vararg(node)
-    local str = "..."
-    if (node.bracketed) then
-        str = "(" .. str .. ")"
-    end
-    return str, operator.ident_priority
-end
-
-function ExpressionRule:ExpressionValue(node)
-    return "(" .. self:expr_emit(node.value) .. ")"
-end
-
-function ExpressionRule:BinaryExpression(node)
-    local oper = node.operator
-    local lprio = operator.left_priority(oper)
-    local rprio = operator.right_priority(oper)
-    local a, alprio, arprio = self:expr_emit(node.left)
-    local b, blprio, brprio = self:expr_emit(node.right)
-    if not arprio then arprio = alprio end
-    if not brprio then brprio = blprio end
-    local ap = arprio <  lprio and format("(%s)", a) or a
-    local bp = blprio <= rprio and format("(%s)", b) or b
-    local str = format("%s %s %s", ap, oper, bp)
-    if (node.bracketed) then
-        str = "(" .. str .. ")"
-    end
-    return str, lprio, rprio
-end
-
-function ExpressionRule:UnaryExpression(node)
-    local arg, arg_prio = self:expr_emit(node.argument)
-    local op_prio = operator.unary_priority
-    if arg_prio < op_prio then arg = format("(%s)", arg) end
-    local str = format("%s %s", node.operator, arg)
-    if (node.bracketed) then
-        str = "(" .. str .. ")"
-    end
-    return str, operator.unary_priority
-end
-
-ExpressionRule.LogicalExpression = ExpressionRule.BinaryExpression
-
-function ExpressionRule:ConcatenateExpression(node)
-    local ls = { }
-    local cat_prio = operator.left_priority("..")
-    for k = 1, #node.terms do
-        local kprio
-        ls[k], kprio = self:expr_emit(node.terms[k])
-        if kprio < cat_prio then ls[k] = format("(%s)", ls[k]) end
-    end
-    local str = concat(ls, " .. ")
-    if (node.bracketed) then
-        str = "(" .. str .. ")"
-    end
-    return str, cat_prio
-end
-
-function ExpressionRule:Table(node)
-    local hash = { }
-    local last = #node.keyvals
-    for i = 1, last do
-        local kv = node.keyvals[i]
-        local val = self:expr_emit(kv[1])
-        local key = kv[2]
-        if key then
-            if is_string(key) and string_is_ident(key.value) then
-                hash[i] = format("%s = %s", key.value, val)
-            else
-                hash[i] = format("[%s] = %s", self:expr_emit(key), val)
-            end
-        else
-            if i == last and kv[1].bracketed then
-                hash[i] = format("(%s)", val)
-            else
-                hash[i] = format("%s", val)
-            end
-        end
-    end
-    local content = ""
-    if #hash > 0 then
-        content = comma_sep_list(hash)
-    end
-    content = "{" .. content .. "}"
-    if (node.bracketed) then
-        content = "(" .. content .. ")"
-    end
-    return content, operator.ident_priority
-end
-
-function ExpressionRule:CallExpression(node)
-    local callee, prio = self:expr_emit(node.callee)
-    if prio < operator.ident_priority then
-        callee = "(" .. callee .. ")"
-    end
-    local exp = format("%s(%s)", callee, self:expr_list(node.arguments))
-    return exp, operator.ident_priority
-end
-
-function ExpressionRule:SendExpression(node)
-    local rec, prio = self:expr_emit(node.receiver)
-    if prio < operator.ident_priority then
-        rec = "(" .. rec .. ")"
-    end
-    local method = node.method.name
-    local exp = format("%s:%s(%s)", rec, method, self:expr_list(node.arguments))
-    return exp, operator.ident_priority
-end
-
-function ExpressionRule:TenaryExpression(node)
-    local condition = self:expr_emit(node.condition)
-    local left = self:expr_emit(node.left)
-    local right = self:expr_emit(node.right)
-    local exp = format("(%s && {%s} || {%s})[1]", condition, left, right)
-    return exp, operator.ident_priority
-end
-
-function ExpressionRule:NewExpression(node)
-    local expr = node.expr
-    local iden = self:expr_emit(expr)
-    local args = ""
-    if (expr.kind == "CallExpression") then
-        iden = self:expr_emit(expr.callee)
-        args = self:expr_list(expr.arguments)
-    end
-    local exp = format("%s:__new(%s)", iden, args)
-    return exp, operator.ident_priority
-end
-
-function ExpressionRule:AwaitExpression(node)
-    local exp = format([[__await(%s)]], self:expr_emit(node.expr))
-    return exp, operator.ident_priority
-end
-
-function StatementRule:AwaitExpression(node)
-    self:add_line(ExpressionRule.AwaitExpression(self, node))
-end
-
-function StatementRule:StatementsGroup(node)
-    for i = 1, #node.statements do
-        self:emit(node.statements[i])
+	local n = #ls
+    for i = 1, n do
+    	f(ls[i], i == n)
     end
 end
 
-function StatementRule:IncrementStatement(node)
-    local var = self:expr_emit(node.var)
-    local line = format("%s = %s %s 1", var, var, node.operator)
-    self:add_line(line)
-end
+local function add_default_values(self, defaults)
+    if (!defaults) then return end
 
-function ExpressionRule:IncrementExpression(node)
-    local line
-    local var = self:expr_emit(node.var)
-    if (node.in_loop || true) then
-        if node.pre then
-            line = format("(function()local temp=%s;%s=%s%s1;return temp;end)()",
-                var, var, var, node.operator)
-        else
-            line = format("(function()%s=%s%s1;return %s;end)()", var, var, node.operator, var)
-        end
-        return line, operator.ident_priority
-    else
-        local new_var = var
-        if node.pre then
-            new_var = "__temp__" .. util.CRC(var) .. math.random(5, 50)
-            line = format("local % s = %s; %s = %s %s 1",
-                new_var, var, var, var, node.operator)
-        else
-            line = format("%s = %s %s 1", var, var, node.operator, var)
-        end
-        self:add_line(line)
-        return new_var, operator.ident_priority
+    for k, v in ipairs(defaults) do
+        self:add_line("if(")
+        self:expr_emit(v.ident)
+        self:add_line("==nil)then ")
+        self:expr_emit(v.ident)
+        self:add_line("=")
+        self:expr_emit(v.value)
+        self:add_line(";end;")
     end
 end
 
-local function add_default_values(self, node)
-    local body = node.body
-    local added = 0
-    local ast = self.ast
-    for line, param in ipairs(node.params) do
-        local default_value = param.default_value
-        if (not default_value) then continue end
-        added = added + 1
-        local test = ast:expr_binop("==", param, ast:literal())
-        test.bracketed = true
-        table.insert(body, added, ast:if_stmt({test}, {{
-            ast:chunk({ast:assignment_expr({param}, {default_value}, '=')})
-        }}))
+local function table_to_true(tbl)
+    for k, v in ipairs(tbl) do
+        tbl[v], tbl[k] = true, nil
+    end
+    return tbl
+end
+
+local ReplacedKeyword = table_to_true({
+    "end", "then", "elseif", "repeat", "until", "not", "or"
+})
+
+local CHANGE_KEYWORD = true
+local function should_replace(v)
+    if (ReplacedKeyword[v.value]) then
+        CHANGE_KEYWORD = false
+        return true
     end
 end
 
-function StatementRule:FunctionDeclaration(node)
-    self:proto_enter(0)
-    add_default_values(self, node)
-    local name = self:expr_emit(node.id)
-    local header = format("function %s(%s)", name, comma_sep_list(node.params, as_parameter))
-    if node.locald then
-        header = "local " .. header
-    end
-    self:add_section(header, node.body)
-    local child_proto = self:proto_leave()
-    self.proto:merge(child_proto)
+local ASYNC_FUNCTION = "LAU_ASYNC"
+local AWAIT_FUNCTION = "LAU_AWAIT"
+local NEW_FUNCTION   = "LAU_NEW"
+
+local FUNCTION_NAMES = {}
+local function GET_FUNCTION(name)
+    return FUNCTION_NAMES[name]
 end
 
-function StatementRule:AsyncFunctionDeclaration(node)
-    StatementRule.FunctionDeclaration(self, node)
-    local code = self.proto.code
-    local name = self:expr_emit(node.id)
-    code[#code] = code[#code] .. "; " .. name .. " = async(" .. name .. ")"
+local function SET_FUNCTION(name, value)
+    FUNCTION_NAMES[name] = value
 end
 
-function ExpressionRule:FunctionExpression(node)
-    self:proto_enter()
-    add_default_values(self, node)
-    local body = node.body
-    local header = format("function(%s)", comma_sep_list(node.params, as_parameter))
-    self:add_section(header, body)
-    local child_proto = self:proto_leave()
-    return child_proto:inline(), 0
-end
-
-function StatementRule:CallExpression(node)
-    local line = self:expr_emit(node)
-    self:add_line(line)
-end
-
-local function check_increment(node)
-    for k, v in pairs(node) do
-        if (istable(v)) then
-            if (v.kind == "IncrementExpression") then
-                v.in_loop = true
-            end
-            check_increment(v)
-        end
-    end
-end
-
-function StatementRule:ForStatement(node)
-    local init = node.init
-    local istart = self:expr_emit(init.value)
-    local iend = self:expr_emit(node.last)
-    local header
-    if node.step and not is_const(node.step, 1) then
-        local step = self:expr_emit(node.step)
-        header = format("for %s = %s, %s, %s do", init.id.name, istart, iend, step)
-    else
-        header = format("for %s = %s, %s do", init.id.name, istart, iend)
-    end
-    self:add_section(header, node.body)
-end
-
-function StatementRule:ForInStatement(node)
-    local vars = comma_sep_list(node.namelist.names, as_parameter)
-    local explist = self:expr_list(node.explist)
-    local header = format("for %s in %s do", vars, explist)
-    self:add_section(header, node.body)
-end
-
-function StatementRule:DoStatement(node)
-    self:add_section("do", node.body)
-end
-
-function StatementRule:WhileStatement(node)
-    check_increment(node.test)
-    local test = self:expr_emit(node.test)
-    local header = format("while %s do", test)
-    self:add_section(header, node.body)
-end
-
-function StatementRule:RepeatStatement(node)
-    self:add_section("repeat", node.body, true)
-    check_increment(node.test)
-    local test = self:expr_emit(node.test)
-    local until_line = format("until %s", test)
-    self:add_line(until_line)
-end
-
-function StatementRule:BreakStatement()
-    self:add_line("break")
-end
-
-function StatementRule:ContinueStatement()
-    self:add_line("continue")
-end
-
-function StatementRule:IfStatement(node)
-    local ncons = #node.tests
-    for i = 1, ncons do
-        local header_tag = i == 1 and "if" or "elseif"
-        local test = self:expr_emit(node.tests[i])
-        local header = format("%s %s then", header_tag, test)
-        self:add_section(header, node.cons[i], true)
-    end
-    if node.alternate then
-        self:add_section("else", node.alternate, true)
-    end
-    self:add_line("end")
-end
-
-function StatementRule:LocalDeclaration(node)
-    local line
-    local names = comma_sep_list(node.names, as_parameter)
-    if #node.expressions > 0 then
-        if node.operator == '=' then
-            line = format("local %s = %s", names, self:expr_list(node.expressions))
-        else
-            line = format("local %s = %s %s (%s)", names, names, node.operator, self:expr_list(node.expressions))
-        end
-    else
-        line = format("local %s", names)
-    end
-    self:add_line(line)
-end
-
-function StatementRule:MultiLocalDeclaration(node)
-    for k, v in ipairs(node.vars) do
-        StatementRule.LocalDeclaration(self, v)
-    end
-end
-
-function StatementRule:AssignmentExpression(node)
-    local line
-    if node.operator == '=' then
-        line = format("%s = %s", self:expr_list(node.left), self:expr_list(node.right))
-    else
-        local left = self:expr_list(node.left)
-        if node.operator == '&' then
-            node.operator = '..'
-        end
-        if #node.right > 1 then
-            local right = self:expr_list({table.remove(node.right, 1)})
-            line = format("%s = (%s %s (%s)), %s", left, left, node.operator, right, self:expr_list(node.right))
-        else
-            line = format("%s = %s %s (%s)", left, left, node.operator, self:expr_list(node.right))
-        end
-    end
-    self:add_line(line)
-end
-
-function StatementRule:MultiAssignmentExpression(node)
-    for k, v in ipairs(node.vars) do
-        StatementRule.AssignmentExpression(self, v)
-    end
-end
+local StatementRule = {}
+local ExpressionRule = {}
 
 function StatementRule:Chunk(node)
     self:list_emit(node.body)
 end
 
-function StatementRule:ExpressionStatement(node)
-    local line = self:expr_emit(node.expression)
-    self:add_line(line)
+function StatementRule:Text(node)
+    self:add_line(node.text, node.line)
+end
+
+function StatementRule:FunctionDeclaration(node)
+	if (node.locald) then
+		self:add_line("local ")
+    	self:expr_emit(node.id)
+		self:add_line(";")
+	end
+
+    self:expr_emit(node.id)
+	self:add_line("=")
+
+    if (node.is_async) then
+        self:add_line(ASYNC_FUNCTION .. "(")
+    end
+
+	self:add_line("function(")
+
+	comma_sep_list(node.params, function(_node, last)
+        self:expr_emit(_node)
+        if (!last) then
+        	self:add_line(",")
+        end
+    end)
+
+	self:add_line(")")
+
+    add_default_values(self, node.default)
+
+    self:add_section(node.body, node.is_async)
+
+    if (node.is_async) then
+        self:add_line(")")
+    end
+end
+
+local function add_fields(self, fields, is_static)
+    for i = 1, #fields do
+        local field = fields[i]
+        if (is_static) then
+            if (!field.is_static) then continue end
+        elseif (field.is_static) then
+            continue
+        end
+
+        if (should_replace(field)) then
+            field.value = "[\"" .. field.value .. "\"]"
+            CHANGE_KEYWORD = true
+        end
+
+        self:expr_emit(field)
+        self:add_line("=")
+        self:expr_emit(field.body)
+        self:add_line(",")
+    end
+end
+
+function add_methods(self, methods, is_static)
+    for i = 1, #methods do
+        local method = methods[i]
+        if (is_static) then
+            if (!method.is_static) then continue end
+        elseif (method.is_static) then
+            continue
+        end
+
+        local id = method.id
+        if (should_replace(id)) then
+            id.value = "[\"" .. id.value .. "\"]"
+            CHANGE_KEYWORD = true
+        end
+
+        self:emit(method)
+    end
+end
+
+function StatementRule:ClassDeclaration(node)
+    if (node.is_local) then
+        self:add_line("local ")
+        self:expr_emit(node.name)
+        self:add_line(";")
+    end
+
+    self:add_line("do ")
+
+    local class_iden = node.name
+
+    self:expr_emit(node.name)
+    self:add_line("={class={};};local index_table={__index=")
+
+    self:expr_emit(node.name)
+    self:add_line(".class};")
+
+    local body = node.body
+    for i = 1, #body do
+        local v = body[i]
+
+        local is_static = v.is_static
+
+        local id = v.field && v || v.id
+        local name = id.value
+
+        if (name == "tostring" && !v.ctor && !v.field) then
+            id.value = "__tostring"
+
+            if (!is_static) then
+                self:add_line("index_table.")
+                self:emit(v)
+            else
+                self:add_line("setmetatable(")
+                self:expr_emit(class_iden)
+                self:add_line(", {")
+                self:emit(v)
+                self:add_line("});")
+            end
+
+            continue
+        end
+
+        self:expr_emit(class_iden)
+
+        if (!v.ctor && !is_static) then
+            self:add_line(".class")
+        end
+
+        if (should_replace(id)) then
+            id.value = "[\"" .. name .. "\"]"
+            CHANGE_KEYWORD = true
+        else
+            id.value = "." .. name
+        end
+
+        if (v.ctor) then
+            table.remove(v.params, 1) -- remove self
+
+            table.insert(v.body, 1, {
+                kind = "Text",
+                text = "local self=setmetatable({}, index_table);"
+            })
+
+            table.insert(v.body, {
+                kind = "Text",
+                text = "return self;"
+            })
+
+            self:emit(v)
+        elseif (v.field) then
+            self:expr_emit(v)
+            self:add_line("=")
+            self:expr_emit(v.body)
+            self:add_line(";")
+        else
+            self:emit(v)
+        end
+    end
+
+    self:add_line("end;")
+end
+
+function StatementRule:IfStatement(node)
+    self:add_line("if ")
+    self:expr_emit(node.cond)
+    self:add_line(" then ")
+    self:list_emit(node.body)
+
+    local else_body = node.else_body
+    while (else_body) do
+        local cond = else_body.cond
+
+        if (cond) then
+            self:add_line("elseif ")
+            self:expr_emit(cond)
+            self:add_line(" then ")
+            self:list_emit(else_body.body)
+        else
+            self:add_line("else ")
+            self:list_emit(else_body)
+        end
+
+        else_body = else_body.else_body
+    end
+
+    self:add_line("end;")
+end
+
+function StatementRule:WhileStatement(node)
+    self:add_line("while ")
+    self:expr_emit(node.cond)
+    self:add_line(" do ")
+    self:add_section(node.body)
+end
+
+function StatementRule:DoWhileStatement(node)
+    self:add_line("repeat ")
+    self:list_emit(node.body)
+    self:add_line("until!(")
+    self:expr_emit(node.cond)
+    self:add_line(")")
+end
+
+function StatementRule:ForStatement(node)
+    self:add_line("for ")
+    self:expr_emit(node.var)
+    self:add_line("=")
+    self:expr_emit(node.init)
+    self:add_line(",")
+    self:expr_emit(node.last)
+
+    local step = node.step
+    if step and not is_const(step, 1) then
+        self:add_line(",")
+        self:expr_emit(step)
+    end
+
+    self:add_line(" do ")
+    self:add_section(node.body)
+end
+
+function StatementRule:LocalDeclaration(node)
+    self:add_line("local ")
+    self:expr_list(node.locals)
+
+    local expressions = node.expressions
+    if (expressions) then
+        self:add_line("=")
+        self:expr_list(expressions)
+    end
+
+    self:add_line(";")
 end
 
 function StatementRule:ReturnStatement(node)
-    local exps = self:expr_list(node.arguments)
-    local line
-    if (exps == "") then
-        line = "return"
-    else
-        line = format("return %s", self:expr_list(node.arguments))
+    self:add_line("return")
+
+    local args = node.arguments
+    if (args) then
+        self:add_line(" ")
+        self:expr_list(args)
     end
-    self:add_line(line)
+
+    self:add_line(";")
+end
+
+function StatementRule:BreakStatement(node)
+    self:add_line("break;", node.line)
+end
+
+function StatementRule:ContinueStatement(node)
+    self:add_line("continue;", node.line)
 end
 
 function StatementRule:LabelStatement(node)
-   self:add_line("::" .. node.label .. "::")
+    self:add_line("::")
+    self:expr_emit(node.label)
+    self:add_line("::;")
 end
 
 function StatementRule:GotoStatement(node)
-   self:add_line("goto " .. node.label)
+   self:add_line("goto ")
+   self:expr_emit(node.label)
+   self:add_line(";")
 end
 
-local function proto_inline(proto)
-    -- remove leading whitespaces from first line
-    if #proto.code > 0 then
-        proto.code[1] = string.gsub(proto.code[1], "^%s*", "")
-    end
-    return concat(proto.code, "\n")
+function StatementRule:ExpressionStatement(node)
+    self:expr_emit(node.expression)
+    self:add_line(";")
 end
 
-local function proto_merge(proto, child)
-    for k = 1, #child.code do
-        local line = child.code[k]
-        local indent_str = string.rep("    ", proto.indent)
-        proto.code[#proto.code + 1] = indent_str .. line
+function StatementRule:AssignmentExpression(node)
+    if node.operator == '=' then
+        self:expr_list(node.left)
+        self:add_line("=", node.line)
+        self:expr_list(node.right)
+    else
+        local left = node.left[1]
+
+        self:expr_emit(left)
+        self:add_line("=")
+        self:expr_emit(left)
+        self:add_line(node.operator)
+        self:add_line("(")
+        self:expr_emit(node.right[1])
+        self:add_line(")")
+    end
+    self:add_line(";")
+end
+
+function ExpressionRule:BracketedExpression(node)
+    self:add_line("(")
+    self:expr_emit(node.value)
+    self:add_line(")")
+end
+
+function ExpressionRule:Identifier(node)
+    local v = node.value
+    if (CHANGE_KEYWORD && ReplacedKeyword[v]) then
+        v = "​" .. v
+    end
+    self:add_line(v, node.line)
+end
+
+function ExpressionRule:Literal(node)
+    local val = node.value
+    local key = node.key
+    if (key == "String") then
+        val = format("\"%s\"", escape(val))
+    elseif (key == "Nil") then
+        val = "nil"
+    end
+    self:add_line(val, node.line)
+end
+
+function ExpressionRule:FunctionExpression(node)
+    if (node.is_async) then
+        self:add_line(ASYNC_FUNCTION .. "(")
+    end
+
+    self:add_line("function(")
+
+    comma_sep_list(node.params, function(_node, last)
+        self:expr_emit(_node)
+        if (!last) then
+            self:add_line(",")
+        end
+    end)
+
+    self:add_line(")")
+
+    add_default_values(self, node.default)
+
+    self:add_section(node.body, true)
+
+    if (node.is_async) then
+        self:add_line(")")
     end
 end
 
-local function proto_new(parent, indent)
-    local ind = 0
-    if indent then
-        ind = indent
-    elseif parent then
-        ind = parent.indent
+function ExpressionRule:MemberExpression(node)
+    self:expr_emit(node.object)
+
+    local prop = node.property
+    if node.computed then
+        self:add_line("[")
+        self:expr_emit(prop)
+        self:add_line("]")
+    elseif (should_replace(prop)) then
+        self:add_line("[\"", prop.line)
+        self:expr_emit(prop)
+        self:add_line("\"]")
+        CHANGE_KEYWORD = true
+    else
+        self:add_line(".")
+        self:expr_emit(prop)
     end
-    local proto = { code = { }, indent = ind, parent = parent }
-    proto.inline = proto_inline
-    proto.merge = proto_merge
-    return proto
 end
 
-local function generate(tree, ast_builder, name)
+function ExpressionRule:Vararg(node)
+    self:add_line("...", node.line)
+end
 
-    local self = { line = 0 }
-    self.proto = proto_new()
-    self.chunkname = tree.chunkname
-    self.ast = ast_builder
+function ExpressionRule:BinaryExpression(node)
+    local oper = tostring(node.operator)
+    oper = strsub(oper, 2, #oper - 1)
 
-    function self:proto_enter(indent)
-        self.proto = proto_new(self.proto, indent)
+    self:expr_emit(node.left)
+    self:add_line(oper)
+    self:expr_emit(node.right)
+end
+ExpressionRule.LogicalExpression = ExpressionRule.BinaryExpression
+
+function ExpressionRule:UnaryExpression(node)
+    local oper = tostring(node.operator)
+    oper = strsub(oper, 2, #oper - 1)
+
+    self:add_line(oper)
+    self:expr_emit(node.argument)
+end
+
+function ExpressionRule:ConcatenateExpression(node)
+    self:expr_emit(node.left)
+    self:add_line(" ..")
+    self:expr_emit(node.right)
+end
+
+function ExpressionRule:TableExpression(node)
+    local last = #node.keyvals
+    self:add_line("{")
+
+    for i = 1, last do
+        local kv = node.keyvals[i]
+        local key, val = kv[1], kv[2]
+        if (key) then
+            if (should_replace(key)) then
+                self:add_line("[\"", key.line)
+                self:expr_emit(key)
+                self:add_line("\"]=")
+                CHANGE_KEYWORD = true
+            elseif (key.key == "Ident") then
+                self:expr_emit(key)
+                self:add_line("=")
+            else
+                self:add_line("[")
+                self:expr_emit(key)
+                self:add_line("]=")
+            end
+            self:expr_emit(val)
+        else
+            self:expr_emit(val)
+        end
+
+        if (i != last) then
+            self:add_line(",")
+        end
     end
 
-    function self:proto_leave()
-        local proto = self.proto
-        self.proto = proto.parent
-        return proto
+    self:add_line("}")
+end
+
+function ExpressionRule:CallExpression(node)
+    self:expr_emit(node.callee)
+    self:add_line("(")
+
+    local args = node.arguments
+    if (args) then
+        self:expr_list(args)
     end
 
-    local function to_expr(node)
-        return self:expr_emit(node)
+    self:add_line(")")
+end
+
+function ExpressionRule:SendExpression(node)
+    self:expr_emit(node.receiver)
+    self:add_line(":")
+    self:expr_emit(node.method)
+    self:add_line("(")
+
+    local args = node.arguments
+    if (args) then
+        self:expr_list(args)
     end
 
-    function self:compile_code()
-        return concat(self.code, "\n")
+    self:add_line(")")
+end
+
+function StatementRule:DoStatement(node)
+    self:add_line("do ")
+    self:add_section(node.body)
+end
+
+function ExpressionRule:NewExpression(node)
+    local name = node.name
+    local line = name.line
+
+    self:add_line(NEW_FUNCTION .. "(", line)
+    self:expr_emit(name)
+    self:add_line(",\"", line)
+    self:expr_emit(name)
+    self:add_line("\"", line)
+
+    local args = node.arguments
+    if (args) then
+        self:add_line(",", line)
+        self:expr_list(args)
     end
 
-    function self:indent_more()
-        local proto = self.proto
-        proto.indent = proto.indent + 1
+    self:add_line(")")
+end
+
+function ExpressionRule:AwaitExpression(node)
+    self:add_line(AWAIT_FUNCTION .. "(")
+    self:expr_emit(node.expression)
+    self:add_line(")")
+end
+
+local generated_names = {}
+
+local first_load = true
+local rep = string.rep
+local function generate(tree, name, no_lines)
+	local self = {}
+
+    local code = {" "}
+
+    if !name || (name && !generated_names[name]) then
+        if (name) then
+            generated_names[name] = true
+        end
     end
 
-    function self:indent_less()
-        local proto = self.proto
-        proto.indent = proto.indent - 1
+    if (no_lines) then
+        function self:add_line(str)
+            code[#code + 1] = str
+        end
+    else
+        local current = 1
+        function self:add_line(str, line)
+            if (line && line > current) then
+                code[#code + 1] = rep("\n", line - current)
+                current = line
+            end
+
+            code[#code + 1] = str
+        end
     end
 
-    function self:line(line)
-        -- FIXME: ignored for the moment
-    end
-
-    function self:add_line(line)
-        local proto = self.proto
-        local indent = string.rep("    ", proto.indent)
-        proto.code[#proto.code + 1] = indent .. line
-    end
-
-    function self:add_section(header, body, omit_end)
-        self:add_line(header)
-        self:indent_more()
+    function self:add_section(body, omit_end)
         self:list_emit(body)
-        self:indent_less()
+        self:add_line("end")
         if not omit_end then
-            self:add_line("end")
+            self:add_line(";")
         end
     end
 
@@ -606,14 +607,18 @@ local function generate(tree, ast_builder, name)
     end
 
     function self:expr_list(exps)
-        return comma_sep_list(exps, to_expr)
+        comma_sep_list(exps, function(node, last)
+            self:expr_emit(node)
+            if (!last) then
+                self:add_line(",")
+            end
+        end)
     end
 
     function self:emit(node)
         local rule = StatementRule[node.kind]
-          if not rule then error("cannot find a statement rule for " .. node.kind) end
-          rule(self, node)
-          if node.line then self:line(node.line) end
+        if not rule then error("cannot find a statement rule for " .. node.kind) end
+        rule(self, node)
     end
 
     function self:list_emit(node_list)
@@ -624,7 +629,11 @@ local function generate(tree, ast_builder, name)
 
     self:emit(tree)
 
-    return self:proto_leave():inline()
+    return concat(code)
 end
 
-return generate
+return generate, function(name)
+    return function(tree, debug)
+        return generate(tree, name, false)
+    end
+end

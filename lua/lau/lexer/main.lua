@@ -1,7 +1,10 @@
 require('ffi')
 
 local band = bit.band
-local isstring = isstring
+local isstring = function(v)
+    return type(v) == "string"
+end
+
 local tonumber = tonumber
 local strsub, strbyte, strchar = string.sub, string.byte, string.char
 
@@ -25,7 +28,7 @@ local uint64, int64 = ffi.typeof("uint64_t"), ffi.typeof("int64_t")
 local complex = ffi.typeof("complex")
 
 local function token2str(tok)
-    if isstring(tok) && string.match(tok, "^TK_") then
+    if isstring(tok) and string.match(tok, "^TK_") then
         return string.sub(tok, 4)
     else
         return tok
@@ -51,7 +54,7 @@ local function lex_error(ls, token, em, ...)
     local tok
     if token == "TK_string" then
         tok = escape(ls.save_buf)
-    elseif token == 'TK_name' || token == 'TK_number' then
+    elseif token == 'TK_name' or token == 'TK_number' then
         tok = ls.save_buf
     elseif token then
         tok = token2str(token)
@@ -62,11 +65,11 @@ end
 local function char_isident(c)
     if isstring(c) then
         local b = strbyte(c)
-        if b >= ASCII_0 && b <= ASCII_9 then
+        if b >= ASCII_0 and b <= ASCII_9 then
             return true
-        elseif b >= ASCII_a && b <= ASCII_z then
+        elseif b >= ASCII_a and b <= ASCII_z then
             return true
-        elseif b >= ASCII_A && b <= ASCII_Z then
+        elseif b >= ASCII_A and b <= ASCII_Z then
             return true
         else
             return (c == '_')
@@ -78,14 +81,14 @@ end
 local function char_isdigit(c)
     if isstring(c) then
         local b = strbyte(c)
-        return b >= ASCII_0 && b <= ASCII_9
+        return b >= ASCII_0 and b <= ASCII_9
     end
     return false
 end
 
 local function char_isspace(c)
     local b = strbyte(c)
-    return b >= 9 && b <= 13 || b == 32
+    return b >= 9 and b <= 13 or b == 32
 end
 
 local function byte(ls, n)
@@ -96,7 +99,7 @@ end
 local function pop(ls)
     local k = ls.p
     local c = strsub(ls.data, k, k)
-    if (ls.n > 1) then
+    if ls.n > 1 then
         ls.p = k + 1
     end
     ls.n = ls.n - 1
@@ -104,7 +107,7 @@ local function pop(ls)
 end
 
 local function nextchar(ls)
-    local c = ls.n > 0 && pop(ls) || END_OF_STREAM
+    local c = ls.n > 0 and pop(ls) or END_OF_STREAM
     ls.current = c
     return c
 end
@@ -116,29 +119,15 @@ end
 
 local function curr_is_newline(ls)
     local c = ls.current
-    return (c == '\n' || c == '\r')
+    return (c == '\n' or c == '\r')
 end
 
 local function resetbuf(ls)
     ls.save_buf = ''
 end
 
-local function resetbuf_tospace(ls)
-    ls.space_buf = ls.space_buf .. ls.save_buf
-    ls.save_buf = ''
-end
-
-local function spaceadd(ls, str)
-    ls.space_buf = ls.space_buf .. str
-end
-
 local function save(ls, c)
     ls.save_buf = ls.save_buf .. c
-end
-
-local function savespace_and_next(ls)
-    ls.space_buf = ls.space_buf .. ls.current
-    nextchar(ls)
 end
 
 local function save_and_next(ls)
@@ -150,17 +139,11 @@ local function get_string(ls, init_skip, end_skip)
     return strsub(ls.save_buf, init_skip + 1, - (end_skip + 1))
 end
 
-local function get_space_string(ls)
-    local s = ls.space_buf
-    ls.space_buf = ''
-    return s
-end
-
 local function inclinenumber(ls)
     local old = ls.current
-    savespace_and_next(ls) // skip `\n' or `\r'
-    if curr_is_newline(ls) && ls.current ~= old then
-        savespace_and_next(ls) // skip `\n\r' or `\r\n'
+    local current = nextchar(ls) -- skip `\n' or `\r'
+    if curr_is_newline(ls) and current ~= old then
+        current = nextchar(ls) -- skip `\n\r' or `\r\n'
     end
     ls.linenumber = ls.linenumber + 1
 end
@@ -168,31 +151,31 @@ end
 local function skip_sep(ls)
     local count = 0
     local s = ls.current
-    assert(s == '[' || s == ']')
+    assert(s == '[' or s == ']')
     save_and_next(ls)
     while ls.current == '=' do
         save_and_next(ls)
         count = count + 1
     end
-    return ls.current == s && count || (-count - 1)
+    return ls.current == s and count or (-count - 1)
 end
 
 local function build_64int(str)
     local u = str[#str - 2]
-    local x = (u == 117 && uint64(0) || int64(0))
+    local x = (u == 117 and uint64(0) or int64(0))
     local i = 1
-    while str[i] >= ASCII_0 && str[i] <= ASCII_9 do
+    while str[i] >= ASCII_0 and str[i] <= ASCII_9 do
         x = 10 * x + (str[i] - ASCII_0)
         i = i + 1
     end
     return x
 end
 
-// Only lower case letters are accepted.
+-- Only lower case letters are accepted.
 local function byte_to_hexdigit(b)
-    if b >= ASCII_0 && b <= ASCII_9 then
+    if b >= ASCII_0 and b <= ASCII_9 then
         return b - ASCII_0
-    elseif b >= ASCII_a && b <= ASCII_f then
+    elseif b >= ASCII_a and b <= ASCII_f then
         return 10 + (b - ASCII_a)
     else
         return -1
@@ -201,7 +184,7 @@ end
 
 local function build_64hex(str)
     local u = str[#str - 2]
-    local x = (u == 117 && uint64(0) || int64(0))
+    local x = (u == 117 and uint64(0) or int64(0))
     local i = 3
     while str[i] do
         local n = byte_to_hexdigit(str[i])
@@ -225,20 +208,21 @@ local function strnumdump(str)
     return t
 end
 
+local lower = string.lower
 local function lex_number(ls)
-    local lower = string.lower
     local xp = 'e'
     local c = ls.current
     if c == '0' then
         save_and_next(ls)
         local xc = ls.current
-        if xc == 'x' || xc == 'X' then xp = 'p' end
+        if xc == 'x' or xc == 'X' then xp = 'p' end
     end
-    while char_isident(ls.current) || ls.current == '.' ||
-        ((ls.current == '-' || ls.current == '+') && lower(c) == xp) do
-        c = lower(ls.current)
+    local current = ls.current
+    while char_isident(current) or current == '.' or
+        ((current == '-' or current == '+') and lower(c) == xp) do
+        c = lower(current)
         save(ls, c)
-        nextchar(ls)
+        current = nextchar(ls)
     end
     local str = ls.save_buf
     local x
@@ -248,7 +232,7 @@ local function lex_number(ls)
     elseif strsub(str, -2, -1) == 'll' then
         local t = strnumdump(str)
         if t then
-            x = xp == 'e' && build_64int(t) || build_64hex(t)
+            x = xp == 'e' and build_64int(t) or build_64hex(t)
         end
     else
         x = tonumber(str)
@@ -261,24 +245,24 @@ local function lex_number(ls)
 end
 
 local function read_long_string(ls, sep, ret_value)
-    save_and_next(ls) // skip 2nd `['
-    if curr_is_newline(ls) then // string starts with a newline?
-        inclinenumber(ls) // skip it
+    save_and_next(ls) -- skip 2nd `['
+    if curr_is_newline(ls) then -- string starts with a newline?
+        inclinenumber(ls) -- skip it
     end
     while true do
         local c = ls.current
         if c == END_OF_STREAM then
-            lex_error(ls, Token.EOF, ret_value && "unfinished long string" || "unfinished long comment")
+            lex_error(ls, Token.EOF, ret_value and "unfinished long string" or "unfinished long comment")
         elseif c == ']' then
             if skip_sep(ls) == sep then
-                save_and_next(ls) // skip 2nd `['
+                save_and_next(ls) -- skip 2nd `['
                 break
             end
-        elseif c == '\n' || c == '\r' then
+        elseif c == '\n' or c == '\r' then
             save(ls, '\n')
             inclinenumber(ls)
-            if !ret_value then
-                resetbuf(ls) // avoid wasting space
+            if not ret_value then
+                resetbuf(ls) -- avoid wasting space
             end
         else
             if ret_value then save_and_next(ls)
@@ -291,7 +275,6 @@ local function read_long_string(ls, sep, ret_value)
 end
 
 local function read_long_comment(ls)
-    save_and_next(ls)
     if curr_is_newline(ls) then
         inclinenumber(ls)
     end
@@ -300,12 +283,12 @@ local function read_long_comment(ls)
         if c == END_OF_STREAM then
             lex_error(ls, "TK_string", "unfinished long comment")
         elseif c == '*' then
-            save_and_next(ls)
+            nextchar(ls)
             if ls.current == "/" then
-                save_and_next(ls) // skip 2nd `['
+                nextchar(ls)
                 break
             end
-        elseif c == '\n' || c == '\r' then
+        elseif c == '\n' or c == '\r' then
             save(ls, '\n')
             inclinenumber(ls)
             resetbuf(ls)
@@ -318,7 +301,7 @@ end
 local function hex_char(c)
     if string.match(c, '^%x') then
         local b = band(strbyte(c), 15)
-        if !char_isdigit(c) then b = b + 9 end
+        if not char_isdigit(c) then b = b + 9 end
         return b
     end
 end
@@ -329,12 +312,12 @@ for k, v in pairs(Escapes) do
     ReverseEscapes[v] = "\\" .. k
 end
 local function read_escape_char(ls)
-    local c = nextchar(ls) // Skip the '\\'.
+    local c = nextchar(ls) -- Skip the '\\'.
     local esc = Escapes[c]
     if esc then
         save(ls, esc)
         nextchar(ls)
-    elseif c == 'x' then // Hexadecimal escape '\xXX'.
+    elseif c == 'x' then -- Hexadecimal escape '\xXX'.
         local ch1 = hex_char(nextchar(ls))
         local hc
         if ch1 then
@@ -343,28 +326,28 @@ local function read_escape_char(ls)
                 hc = strchar(ch1 * 16 + ch2)
             end
         end
-        if !hc then
+        if not hc then
             lex_error(ls, 'TK_string', "invalid escape sequence")
         end
         save(ls, hc)
         nextchar(ls)
-    elseif c == 'z' then // Skip whitespace.
+    elseif c == 'z' then -- Skip whitespace.
         nextchar(ls)
         while char_isspace(ls.current) do
             if curr_is_newline(ls) then inclinenumber(ls) else nextchar(ls) end
         end
-    elseif c == '\n' || c == '\r' then
+    elseif c == '\n' or c == '\r' then
         save(ls, '\n')
         inclinenumber(ls)
-    elseif c == '\\' || c == '\"' || c == '\'' then
+    elseif c == '\\' or c == '\"' or c == '\'' then
         save(ls, c)
         nextchar(ls)
     elseif c == END_OF_STREAM then
     else
-        if !char_isdigit(c) then
+        if not char_isdigit(c) then
             lex_error(ls, 'TK_string', "invalid escape sequence")
         end
-        local bc = band(strbyte(c), 15) // Decimal escape '\ddd'.
+        local bc = band(strbyte(c), 15) -- Decimal escape '\ddd'.
         if char_isdigit(nextchar(ls)) then
             bc = bc * 10 + band(strbyte(ls.current), 15)
             if char_isdigit(nextchar(ls)) then
@@ -385,7 +368,7 @@ local function read_string(ls, delim)
         local c = ls.current
         if c == END_OF_STREAM then
             lex_error(ls, 'TK_string', "unfinished string")
-        elseif c == '\n' || c == '\r' then
+        elseif c == '\n' or c == '\r' then
             lex_error(ls, 'TK_string', "unfinished string")
         elseif c == '\\' then
             read_escape_char(ls)
@@ -393,18 +376,17 @@ local function read_string(ls, delim)
             save_and_next(ls)
         end
     end
-    save_and_next(ls) // skip delimiter
+    save_and_next(ls) -- skip delimiter
     return get_string(ls, 1, 1)
 end
 
 local function skip_line(ls)
-    while !curr_is_newline(ls) && ls.current ~= END_OF_STREAM do
-        savespace_and_next(ls)
+    while not curr_is_newline(ls) and ls.current ~= END_OF_STREAM do
+        nextchar(ls)
     end
 end
 
 local single_chars = {
-    ["?"] = Op.Cond,
     ["#"] = Op.Len,
     ["{"] = Token.LBrace,
     ["}"] = Token.RBrace,
@@ -420,7 +402,7 @@ local single_chars = {
 local eq_ops = {
     ["*"] = {Op.Mul, Op.MulAssign},
     ["%"] = {Op.Mod, Op.ModAssign},
-    ["^"] = {Op.Exp, Op.ExpAssign},
+    ["^"] = {Op.Pow, Op.PowAssign},
     ["!"] = {Op.Not, Op.Ne},
     [">"] = {Op.Gt, Op.GtEq},
     ["<"] = {Op.Lt, Op.LtEq},
@@ -433,14 +415,14 @@ local function llex(ls)
     while true do
         local current = ls.current
         if char_isident(current) then
-            if char_isdigit(current) then // Numeric literal.
+            if char_isdigit(current) then -- Numeric literal.
                 return Literal.Number(lex_number(ls)), true
             end
 
             save_and_next(ls)
             local current = ls.current
             while (true) do
-                if (!char_isident(current)) then
+                if not char_isident(current) then
                     break
                 end
                 ls.save_buf = ls.save_buf .. current
@@ -451,7 +433,7 @@ local function llex(ls)
             local keyword = Keyword_KEYS[s]
             if keyword then
                 s = keyword
-            elseif s == "true" || s == "false" then
+            elseif s == "true" or s == "false" then
                 s = Literal.Bool(s)
             elseif s == "nil" then
                 s = Literal.Nil
@@ -460,62 +442,62 @@ local function llex(ls)
             end
             return s, true
         end
-        if current == '\n' || current == '\r' then
+        if current == '\n' or current == '\r' then
             inclinenumber(ls)
-            continue
-        elseif current == ' ' || current == '\t' || current == '\b' || current == '\f' then
-            savespace_and_next(ls)
-            continue
+            goto CONTINUE
+        elseif current == ' ' or current == '\t' or current == '\b' or current == '\f' then
+            nextchar(ls)
+            goto CONTINUE
         elseif current == '=' then
             local next_char = check_nextchar(ls)
-            if next_char == "=" then // ("==")
+            if next_char == "=" then -- ("==")
                 nextchar(ls)
                 return Op.Eq
             elseif next_char == ">" then
                 nextchar(ls)
-                return Token.Arrow // ("=>")
+                return Token.Arrow -- ("=>")
             end
-            return Op.Assign // ("=")
+            return Op.Assign -- ("=")
         elseif current == "+" then
-            if nextchar(ls) == "=" then // ("+=")
+            if nextchar(ls) == "=" then -- ("+=")
                 return Op.AddAssign
             end
-            return Op.Add, true // ("+")
+            return Op.Add, true -- ("+")
         elseif current == "-" then
-            if nextchar(ls) == "=" then // ("-=")
+            if nextchar(ls) == "=" then -- ("-=")
                 return Op.SubAssign
             end
-            return Op.Sub, true // ("-")
+            return Op.Sub, true -- ("-")
         elseif current == "/" then
             local next_char = nextchar(ls)
-            if next_char == "=" then // ("/=")
+            if next_char == "=" then -- ("/=")
                 nextchar(ls)
                 return Op.DivAssign
-            elseif next_char == "/" then // ("Comment")
+            elseif next_char == "/" then -- ("Comment")
                 skip_line(ls)
-                continue
-            elseif next_char == "*" then // ("Comment")
+                goto CONTINUE
+            elseif next_char == "*" then -- ("Comment")
                 read_long_comment(ls)
-                continue
+                goto CONTINUE
             end
-            return Op.Div // ("/")
+            return Op.Div -- ("/")
         elseif current == ':' then
             if nextchar(ls) == ":" then
-                return Token.Label // ("::")
+                return Token.Label -- ("::")
             end
-            return Token.Colon, true // (":")
+            return Token.Colon, true -- (":")
         elseif current == "." then
             if nextchar(ls) == '.' then
                 local next_char = nextchar(ls)
 
                 if next_char == "." then
-                    return Op.Ellipsis // ("...")
+                    return Op.Ellipsis -- ("...")
                 elseif next_char == "=" then
                     return Op.ConAssign
                 end
-                return Op.Concat, true // ("..")
+                return Op.Concat, true -- ("..")
             end
-            return Op.Dot, true// (".")
+            return Op.Dot, true-- (".")
         elseif current == "&" then
             if nextchar(ls) == "&" then
                 nextchar(ls)
@@ -528,7 +510,7 @@ local function llex(ls)
             end
         elseif current == '"' then
             local str = read_string(ls, current)
-            return Literal.String(str), true // ("String")
+            return Literal.String(str), true -- ("String")
         end
         local eq_op = eq_ops[current]
         if eq_op then
@@ -540,12 +522,17 @@ local function llex(ls)
         local single_char = single_chars[current]
         if single_char then return single_char end
         lex_error(ls, nil, "unexpected character (" .. current .. ")")
+
+        ::CONTINUE::
     end
 end
 
 local Lexer = {
     token2str = token2str,
-    error = function(ls, msg)
+    error = function(ls, msg, line)
+        if isnumber(line) then
+            ls.linenumber = line
+        end
         lex_error(ls, nil, msg)
     end,
 }
@@ -555,8 +542,7 @@ function Lexer.next(ls)
     local token, skip_next = llex(ls)
     token.line = ls.linenumber
     ls.token = token
-    ls.space = get_space_string(ls)
-    if !skip_next then
+    if not skip_next then
         nextchar(ls)
     end
     return token
@@ -569,14 +555,20 @@ function Lexer:lookahead()
     return token
 end
 
+local pairs = pairs
+local Empty = table.Empty
 function Lexer:fake_llex()
-    local old_self = table.Copy(self)
+    local old_self = {}
+    for k, v in pairs(self) do
+        old_self[k] = v
+    end
     return function()
-        table.Empty(self)
+        Empty(self)
         for k, v in pairs(old_self) do
             self[k], old_self[k] = v, nil
         end
         old_self = nil
+        return self
     end
 end
 
@@ -590,8 +582,7 @@ local function lex_setup(chunkname, data, n)
         data = data,
         n = n,
         p = 1,
-        chunkname = chunkname,
-        space_buf = ''
+        chunkname = chunkname
     }
     nextchar(ls)
     return setmetatable(ls, LexerClass), ls:next()
