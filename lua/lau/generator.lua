@@ -54,7 +54,7 @@ local function table_to_true(tbl)
 end
 
 local ReplacedKeyword = table_to_true({
-    "end", "then", "elseif", "repeat", "until", "not", "or"
+    "end", "then", "elseif", "repeat", "until", "not", "or", "function"
 })
 
 local CHANGE_KEYWORD = true

@@ -40,7 +40,6 @@ Op("Not", "'!'")
 // Misc
 Op("Ellipsis", "'...'")
 Op("Concat", "'..'")
-Op("Cond", "'?'")
 Op("Dot", "'.'")
 Op("Len", "'#'")
 

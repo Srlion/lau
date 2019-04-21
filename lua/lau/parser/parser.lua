@@ -30,6 +30,8 @@ local function is_literal(v)
 	return Literal[v.key] and true or false
 end
 
+local consume, expect, next_is, next_is_in, peek
+
 local parse, parse_args, parse_body, parse_block, parse_flags, parse_assignment,
 	parse_call_assign, parse_params, parse_ident
 
@@ -63,7 +65,7 @@ function parse(s)
     return ast.chunk(tree, self.chunkname)
 end
 
-local function consume(value)
+function consume(value)
 	local token = self.token
 
 	if token == value then
@@ -74,7 +76,7 @@ local function consume(value)
 	return false
 end
 
-local function expect(expected)
+function expect(expected)
 	if self.token == expected then
 		self:next()
 		return true
@@ -83,13 +85,13 @@ local function expect(expected)
 	end
 end
 
-local function next_is(expected)
+function next_is(expected)
 	local token = self.token
 
 	return token == expected
 end
 
-local function next_is_in(possibilities)
+function next_is_in(possibilities)
 	local token = self.token
 
 	for i = 1, #possibilities do
@@ -107,7 +109,7 @@ local function next_is_in(possibilities)
 	return false
 end
 
-local function peek(no_error)
+function peek(no_error)
 	local token = self.token
 
 	-- print("\n----------------")
@@ -277,7 +279,7 @@ function parse_simple_expr()
         return ast.expr_vararg()
     elseif token == Token.LBrace then
         return parse_table_expr()
-    elseif token == Keyword.Function then
+    elseif token == Keyword.Fn then
         self:next()
 
         local params, default, body = parse_body()
@@ -423,7 +425,7 @@ function parse_stmt()
 			[Keyword.Continue] = parse_continue_stmt,
 			[Token.Label] = parse_label_stmt,
 			[Keyword.Goto] = parse_goto_stmt,
-			[Keyword.Function] = parse_func_stmt,
+			[Keyword.Fn] = parse_func_stmt,
 			[Keyword.Class] = parse_class_stmt,
 			[Keyword.Enum] = function()
 				self:error("Enum is not implemented yet")
@@ -434,7 +436,7 @@ function parse_stmt()
 	local statement = statements[self.token]
 
 	if is_let then
-		if next_is_in{Keyword.Function, Keyword.Class, Keyword.Enum} then
+		if next_is_in{Keyword.Fn, Keyword.Class, Keyword.Enum} then
 			return statement(true)
 		else
 			return parse_let_stmt()
@@ -761,10 +763,6 @@ local assignments_ops = {
 }
 
 function parse_assignment(vlist, var, vk)
-	if vk ~= "var" and vk ~= "indexed" then
-		self:error("syntax error near " .. peek())
-	end
-
 	vlist[#vlist + 1] = var
 
     if consume(Token.Comma) then
@@ -776,7 +774,7 @@ function parse_assignment(vlist, var, vk)
     	local op = assignments_ops[token]
 
     	if not op then
-    		self:error("expected assignment/function call", self.lastline)
+    		self:error("expected assignment", self.lastline)
     	end
 
     	self:next()
@@ -789,14 +787,24 @@ function parse_assignment(vlist, var, vk)
 end
 
 function parse_call_assign()
-	local var, vk = parse_primary_expr()
+	local var, vk = parse_expr()
 
-    if vk == "call" then
-    	expect(Token.Semicolon)
+	local token = peek(true)
+
+	if var == Token.Ident and (token == Op.Assign or token == Token.Comma) then
+		return parse_assignment({}, var, vk)
+	end
+
+	if token ~= Token.Semicolon then
+		return ast.return_stmt({
+			var
+		}), true
+	elseif var.kind == "CallExpression" or var.kind == "SendExpression" then
+		self:next()
 
         return ast.statement_expr(var)
     else
-        return parse_assignment({}, var, vk)
+        self:error("expected statement")
     end
 end
 

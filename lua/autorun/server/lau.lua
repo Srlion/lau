@@ -37,7 +37,7 @@ local function lau_run_file(name, path, text)
     end
 
     print(code)
-    CompileString(code, name)
+    CompileString(code, name)()
 end
 
 lau_run_file("test.lau")
@@ -55,10 +55,9 @@ concommand.Add("a", function()
         print()
         bench.Compare({
             function()
-                type(nil)
             end,
-            -- function()
-            -- end
+            function()
+            end
         }, 999999)
     end
     print("\n------------------")
