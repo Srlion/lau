@@ -797,7 +797,7 @@ function parse_call_assign()
 
 	local token = peek(true)
 
-	if var == Token.Ident and (token == Op.Assign or token == Token.Comma) then
+	if var == Token.Ident and (assignments_ops[token] or token == Token.Comma) then
 		return parse_assignment({}, var, vk)
 	end
 
@@ -810,7 +810,6 @@ function parse_call_assign()
 
         return ast.statement_expr(var)
 	else
-		PrintType(var, vk)
         self:error("expected statement")
     end
 end
