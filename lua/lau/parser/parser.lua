@@ -786,6 +786,12 @@ function parse_assignment(vlist, var, vk)
     end
 end
 
+local call_expressions = {
+	CallExpression  = 1,
+	SendExpression  = 1,
+	AwaitExpression = 1,
+	NewExpression   = 1
+}
 function parse_call_assign()
 	local var, vk = parse_expr()
 
@@ -799,11 +805,12 @@ function parse_call_assign()
 		return ast.return_stmt({
 			var
 		}), true
-	elseif var.kind == "CallExpression" or var.kind == "SendExpression" then
+	elseif call_expressions[var.kind] then
 		self:next()
 
         return ast.statement_expr(var)
-    else
+	else
+		PrintType(var, vk)
         self:error("expected statement")
     end
 end

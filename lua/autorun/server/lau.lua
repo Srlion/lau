@@ -37,7 +37,7 @@ local function lau_run_file(name, path, text)
     end
 
     print(code)
-    CompileString(code, name)()
+    CompileString(code, name)
 end
 
 lau_run_file("test.lau")
