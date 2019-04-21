@@ -109,16 +109,13 @@ function next_is_in(possibilities)
 	return false
 end
 
-function peek(no_error)
+function peek()
 	local token = self.token
 
 	-- print("\n----------------")
 	-- PrintType(debug.getinfo(2))
 
 	if token == Token.EOF then
-		if no_error then
-			return
-		end
 		self:error("unexpected EOF")
 	else
 		return token
@@ -260,7 +257,7 @@ function parse_primary_expr()
 end
 
 function parse_simple_expr()
-    local token = peek(true)
+    local token = self.token
     if not token then
     	self:error("expected expression", self.lastline)
     end
@@ -319,8 +316,7 @@ function parse_table_expr()
     while not next_is(Token.RBrace) do
         local key, val
 
-		local token = peek(true)
-
+		local token = self.token
         if token == Token.LBracket then
         	if self:lookahead() == Literal.Nil then
         		self:error("unexpected 'nil' key")
