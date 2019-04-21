@@ -374,7 +374,7 @@ function StatementRule:AssignmentExpression(node)
     self:add_line(";")
 end
 
-function ExpressionRule:BracketedExpression(node)
+function ExpressionRule:ParenthesesExpression(node)
     self:add_line("(")
     self:expr_emit(node.value)
     self:add_line(")")
