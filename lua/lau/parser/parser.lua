@@ -271,7 +271,9 @@ function parse_simple_expr()
         	self:error("cannot use '...' outside a vararg function")
         end
 
-    	self:next()
+		if self:next() == Token.Arrow then
+			return parse_arrow_func_expr(ast.expr_vararg(), true)
+		end
 
         return ast.expr_vararg()
     elseif token == Token.LBrace then
@@ -354,12 +356,16 @@ function parse_table_expr()
     return ast.expr_table(kvs)
 end
 
-function parse_arrow_func_expr(name)
+function parse_arrow_func_expr(name, vararg)
 	local reset = self:fake_llex()
 	local params, default
 
 	local o_varargs = self_save("varargs", false)
 	local o_await = self_save("await", false)
+
+	if vararg then
+		self.varargs = true
+	end
 
 	if not name then
 		local status
@@ -372,7 +378,7 @@ function parse_arrow_func_expr(name)
 		params = {name}
 	end
 
-	if params == false or not next_is(Token.Arrow) then
+	if not name and (params == false or not next_is(Token.Arrow)) then
 		reset()
 
 		return false

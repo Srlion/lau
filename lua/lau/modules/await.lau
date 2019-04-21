@@ -1,9 +1,13 @@
 let __AWAIT__, await_failed;
 do {
+    let getmetatable = getmetatable;
+
+    let coroutine_running = coroutine.running;
+    let coroutine_resume  = coroutine.resume;
+    let coroutine_yield   = coroutine.yield;
+
     let AWAIT_FAILED = {
-        __tostring() {
-            "await failed"
-        }
+        __tostring: s => "await failed"
     };
 
     AWAIT_FAILED.__index = AWAIT_FAILED;
@@ -12,9 +16,6 @@ do {
         MsgC(Color(137, 222, 255), "[ERROR] ", err, "\n");
     }
 
-    let coroutine_running = coroutine.running;
-    let coroutine_resume  = coroutine.resume;
-    let coroutine_yield   = coroutine.yield;
     fn __AWAIT__(promise) {
         if !Promise.isPromise(promise) {
             promise = Promise.resolve(promise);
@@ -38,7 +39,6 @@ do {
         coroutine_yield(promise)
     }
 
-    let getmetatable = getmetatable;
     fn await_failed(s) {
         getmetatable(s) == AWAIT_FAILED
     }
