@@ -271,7 +271,7 @@ function parse_simple_expr()
     	return ast.literal(token)
     elseif token == Op.Ellipsis then
         if not self.varargs then
-        	self:error("cannot use '...' outside a vararg function");
+        	self:error("cannot use '...' outside a vararg function")
         end
 
     	self:next()
@@ -319,32 +319,26 @@ function parse_table_expr()
     while not next_is(Token.RBrace) do
         local key, val
 
-        if next_is(Token.LBracket) then
+		local token = peek(true)
+
+        if token == Token.LBracket then
         	if self:lookahead() == Literal.Nil then
         		self:error("unexpected 'nil' key")
         	end
 
         	key = parse_bracket_expr()
         	expect(Token.Colon)
-        elseif next_is_in({Literal, Token.Ident}) then
+        elseif is_literal(token) or token == Token.Ident then
         	if next_is(Literal.Nil) then
         		self:error("unexpected 'nil' key")
         	end
 
-        	local lookahead = self:lookahead()
+        	val = ast.literal(token)
 
-        	if lookahead == Token.LParens then
-        		key = ast.literal(peek())
-        		self:next()
-
-        		local params, default, body = parse_body()
-        		val = ast.expr_function(body, params, default, body.is_async)
-        	elseif lookahead == Token.Colon then
-        		key = ast.literal(peek())
-
-        		self:next()
-        		self:next()
-        	end
+			if self:next() == Token.Colon then
+				self:next()
+				key, val = val, nil
+			end
         end
 
         if not val then
@@ -410,7 +404,7 @@ end
 	Statements
 ]]
 
-local statements;
+local statements
 function parse_stmt()
 	local is_let = consume(Keyword.Let)
 
@@ -522,7 +516,7 @@ function parse_let_stmt()
 		locals[#locals + 1] = parse_ident()
 	until not consume(Token.Comma)
 
-	local exps;
+	local exps
 
 	local token = self.token
 	if token ~= Token.Semicolon then
@@ -792,13 +786,12 @@ local call_expressions = {
 	AwaitExpression = 1,
 	NewExpression   = 1
 }
+
 function parse_call_assign()
-	local var, vk = parse_expr()
+	local var, token = parse_expr()
 
-	local token = peek(true)
-
-	if var == Token.Ident and (assignments_ops[token] or token == Token.Comma) then
-		return parse_assignment({}, var, vk)
+	if (var == Token.Ident or var.kind == "MemberExpression") and (assignments_ops[token] or token == Token.Comma) then
+		return parse_assignment({}, var, token)
 	end
 
 	if token ~= Token.Semicolon then

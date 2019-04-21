@@ -1,44 +1,45 @@
-let AWAIT_FAILED = {
-    __tostring() {
-        return "await failed";
-    }
-};
-AWAIT_FAILED.__index = AWAIT_FAILED;
-
-local function _error(err) {
-    MsgC(Color(137, 222, 255), "[ERROR] ", err, "\n");
-}
-
-let coroutine_running = coroutine.running;
-let coroutine_resume  = coroutine.resume;
-let coroutine_yield   = coroutine.yield;
-function LAU_AWAIT(promise) {
-    if !Promise.isPromise(promise) {
-        promise = Promise.resolve(promise);
-    }
-
-    let co = coroutine_running();
-    if !co {
-        error("can't await in non async function", 2);
-    }
-
-    promise:done((...) => {
-        let status, err = coroutine_resume(co, ...);
-        if status == false {
-            _error(err);
+let __AWAIT__, await_failed;
+do {
+    let AWAIT_FAILED = {
+        __tostring() {
+            "await failed"
         }
-    }, err => {
-        let NEW_AWAIT_FAILED = setmetatable({err: err}, AWAIT_FAILED);
-        let status, err = coroutine_resume(co, NEW_AWAIT_FAILED);
-        if status == false {
-            _error(err);
+    };
+
+    AWAIT_FAILED.__index = AWAIT_FAILED;
+
+    let fn error(err) {
+        MsgC(Color(137, 222, 255), "[ERROR] ", err, "\n");
+    }
+
+    let coroutine_running = coroutine.running;
+    let coroutine_resume  = coroutine.resume;
+    let coroutine_yield   = coroutine.yield;
+    fn __AWAIT__(promise) {
+        if !Promise.isPromise(promise) {
+            promise = Promise.resolve(promise);
         }
-    });
 
-    return coroutine_yield(promise);
-}
+        let co = coroutine_running();
 
-let getmetatable = getmetatable;
-function await_failed(s) {
-    return getmetatable(s) == AWAIT_FAILED;
+        promise:done((...) => {
+            let status, err = coroutine_resume(co, ...);
+            if status == false {
+                error(err);
+            }
+        }, err => {
+            let NEW_AWAIT_FAILED = setmetatable({err: err}, AWAIT_FAILED);
+            let status, err = coroutine_resume(co, NEW_AWAIT_FAILED);
+            if status == false {
+                error(err);
+            }
+        });
+
+        coroutine_yield(promise)
+    }
+
+    let getmetatable = getmetatable;
+    fn await_failed(s) {
+        getmetatable(s) == AWAIT_FAILED
+    }
 }

@@ -65,19 +65,6 @@ local function should_replace(v)
     end
 end
 
-local ASYNC_FUNCTION = "LAU_ASYNC"
-local AWAIT_FUNCTION = "LAU_AWAIT"
-local NEW_FUNCTION   = "LAU_NEW"
-
-local FUNCTION_NAMES = {}
-local function GET_FUNCTION(name)
-    return FUNCTION_NAMES[name]
-end
-
-local function SET_FUNCTION(name, value)
-    FUNCTION_NAMES[name] = value
-end
-
 local StatementRule = {}
 local ExpressionRule = {}
 
@@ -100,7 +87,7 @@ function StatementRule:FunctionDeclaration(node)
 	self:add_line("=")
 
     if (node.is_async) then
-        self:add_line(ASYNC_FUNCTION .. "(")
+        self:add_line("__ASYNC__" .. "(")
     end
 
 	self:add_line("function(")
@@ -401,7 +388,7 @@ end
 
 function ExpressionRule:FunctionExpression(node)
     if (node.is_async) then
-        self:add_line(ASYNC_FUNCTION .. "(")
+        self:add_line("__ASYNC__" .. "(")
     end
 
     self:add_line("function(")
@@ -540,7 +527,7 @@ function ExpressionRule:NewExpression(node)
     local name = node.name
     local line = name.line
 
-    self:add_line(NEW_FUNCTION .. "(", line)
+    self:add_line("__NEW__" .. "(", line)
     self:expr_emit(name)
     self:add_line(",\"", line)
     self:expr_emit(name)
@@ -556,23 +543,22 @@ function ExpressionRule:NewExpression(node)
 end
 
 function ExpressionRule:AwaitExpression(node)
-    self:add_line(AWAIT_FUNCTION .. "(")
+    self:add_line("__AWAIT__" .. "(")
     self:expr_emit(node.expression)
     self:add_line(")")
 end
 
 local generated_names = {}
 
-local first_load = true
 local rep = string.rep
-local function generate(tree, name, no_lines)
+local function generate(tree, no_lines, addon_name)
 	local self = {}
 
     local code = {" "}
 
-    if !name || (name && !generated_names[name]) then
-        if (name) then
-            generated_names[name] = true
+    if !addon_name || (addon_name && !generated_names[addon_name]) then
+        if (addon_name) then
+            generated_names[addon_name] = true
         end
     end
 
@@ -632,8 +618,4 @@ local function generate(tree, name, no_lines)
     return concat(code)
 end
 
-return generate, function(name)
-    return function(tree, debug)
-        return generate(tree, name, false)
-    end
-end
+return generate

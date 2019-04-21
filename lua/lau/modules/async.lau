@@ -1,59 +1,69 @@
-let unpack = unpack;
-let select = select;
+let __ASYNC__;
+do {
+    let unpack = unpack;
+    let select = select;
 
-let table_maxn = table.maxn;
-let coroutine_resume  = coroutine.resume;
-let coroutine_yield   = coroutine.yield;
-let coroutine_running = coroutine.running;
-let coroutine_create  = coroutine.create;
+    let table_maxn = table.maxn;
+    let coroutine_resume  = coroutine.resume;
+    let coroutine_yield   = coroutine.yield;
+    let coroutine_running = coroutine.running;
+    let coroutine_create  = coroutine.create;
 
-let function pack(...) {
-    return select("#", ...), [...];
-}
+    let fn pack(...) {
+        return select("#", ...), {...};
+    }
 
-let count, cached = 0, [];
-let function getCoroutine(fn, ...) {
-    let rets_n, rets;
-    if (count > 0) {
-        rets_n, rets = pack(
-            coroutine_resume(cached[count], fn, ...)
-        );
-        cached[count] = nil;
-        count--;
-        if (!rets[1])
-        	error(rets[2], 0);
-        else
-        	return unpack(rets, 2, rets_n);
-    } else {
-        let _cached;
-        _cached = coroutine_create((...) => {
-            let arg = [...];
-            while (true) {
-                arg[1](
-                	unpack(arg, 2, table_maxn(arg))
-                );
-                count++;
-                cached[count] = _cached;
-                arg = [coroutine_yield()];
+    let count, cached = 0, {};
+    let fn get_coroutine(func, ...) {
+        let rets_n, rets;
+        if count > 0 {
+            rets_n, rets = pack(
+                coroutine_resume(cached[count], func, ...)
+            );
+
+            cached[count] = nil;
+            count -= 1;
+
+            if !rets[1] {
+                error(rets[2], 0);
+            } else {
+                unpack(rets, 2, rets_n)
             }
-        });
-        rets_n, rets = pack(
-            coroutine_resume(_cached, fn, ...)
-        );
-        if (!rets[1])
-        	error(rets[2], 0);
-        else
-        	return unpack(rets, 2, rets_n);
+        } else {
+            let _cached;
+            _cached = coroutine_create((...) => {
+                let arg = {...};
+                while (true) {
+                    arg[1](
+                        unpack(arg, 2, table_maxn(arg))
+                    );
+
+                    count += 1;
+                    cached[count] = _cached;
+
+                    arg = {coroutine_yield()};
+                }
+            });
+
+            rets_n, rets = pack(
+                coroutine_resume(_cached, func, ...)
+            );
+
+            if !rets[1] {
+                error(rets[2], 0);
+            } else {
+                unpack(rets, 2, rets_n)
+            }
+        }
+    }
+
+    fn __ASYNC__(func) {
+        (...) => {
+            if coroutine_running() {
+                func(...)
+            } else {
+                get_coroutine(func, ...)
+            }
+        }
     }
 }
-
-LAU_ASYNC = {};
-LAU_ASYNC.__index = LAU_ASYNC;
-setmetatable(LAU_ASYNC, {
-    __call: (_, fn) => (...) => {
-    	if (coroutine_running())
-    		return fn(...);
-    	else
-    		return getCoroutine(fn, ...);
-    }
-});
