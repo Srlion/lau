@@ -33,7 +33,7 @@ function Lau.RunFile(file_name, path, no_run, no_lines, addon_name)
     if no_run then return code end
 
     print(code)
-    CompileString(code, file_name)
+    CompileString(code, file_name)()
 end
 
 Lau.RunFile("test.lau")

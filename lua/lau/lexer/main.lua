@@ -235,9 +235,9 @@ local function lex_number(ls)
             x = xp == 'e' and build_64int(t) or build_64hex(t)
         end
     else
-        x = tonumber(str)
+        x = str
     end
-    if x then
+    if tonumber(x) then
         return x
     else
         lex_error(ls, 'TK_number', "malformed number")
