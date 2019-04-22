@@ -31,9 +31,9 @@ do {
             }
         } else {
             let _cached;
-            _cached = coroutine_create((...) => {
+            _cached = coroutine_create(... => {
                 let arg = {...};
-                while (true) {
+                while true {
                     arg[1](
                         unpack(arg, 2, table_maxn(arg))
                     );
@@ -58,7 +58,7 @@ do {
     }
 
     fn __ASYNC__(func) {
-        (...) => {
+        ... => {
             if coroutine_running() {
                 func(...)
             } else {

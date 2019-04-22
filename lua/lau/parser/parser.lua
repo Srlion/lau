@@ -3,7 +3,7 @@ local ast 	   = include("lau/ast.lua")
 
 local format = string.format
 
-local lexer = lau.lexer
+local lexer = Lau.lexer
 local Keyword = lexer.Keyword
 local Literal = lexer.Literal
 local Op = lexer.Op
@@ -51,16 +51,12 @@ function parse(s)
 	self.old_has_await = {}
 
 	local tree = {}
-	local stmt, is_last = nil, false
+	local stmt = nil
 
-	while not is_last and self.token ~= Token.EOF do
-		stmt, is_last = parse_stmt()
+	while self.token ~= Token.EOF do
+		stmt = parse_stmt()
 		tree[#tree + 1] = stmt
     end
-
-    if self.token ~= Token.EOF then
-    	expect(Token.EOF)
-	end
 
     return ast.chunk(tree, self.chunkname)
 end
@@ -717,9 +713,9 @@ function parse_block()
 	local body = {}
 
 	local token = self.token
-	local stmt, is_last = nil, false
-	while not is_last and token ~= Token.EOF and token ~= Token.RBrace do
-		stmt, is_last = parse_stmt()
+	local stmt = nil
+	while token ~= Token.EOF and token ~= Token.RBrace do
+		stmt = parse_stmt()
 		body[#body + 1] = stmt
 		token = self.token
 	end

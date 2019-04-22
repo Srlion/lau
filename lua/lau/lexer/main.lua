@@ -14,7 +14,7 @@ local ASCII_A, ASCII_Z = 65, 90
 
 local END_OF_STREAM = -1
 
-local lexer = lau.lexer
+local lexer = Lau.lexer
 local Keyword = lexer.Keyword;
 local Literal = lexer.Literal;
 local Op = lexer.Op;
