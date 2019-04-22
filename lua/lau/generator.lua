@@ -42,14 +42,6 @@ local is_types = {};local function add_type(name, list)
     end
 end
 
-add_type("IsColor", {
-    "color",
-    "rgb",
-    "rgba"
-})
-add_type("isentity", {
-    "entity"
-})
 add_type("isfunction", {
     "function",
     "func"
@@ -70,6 +62,8 @@ add_type("isstring", {
     "string",
     "str"
 })
+add_type("IsColor", "color")
+add_type("isentity", "entity")
 add_type("istable", "table")
 add_type("isangle", "angle")
 add_type("isvector", "vector")
