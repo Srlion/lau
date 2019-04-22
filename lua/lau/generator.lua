@@ -1,6 +1,6 @@
 local strbyte, strsub = string.byte, string.sub
 
-local lexer   = lau.lexer
+local lexer   = Lau.lexer
 local Keyword = lexer.Keyword
 local Literal = lexer.Literal
 local Op 	  = lexer.Op
