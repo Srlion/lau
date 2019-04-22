@@ -554,7 +554,7 @@ local rep = string.rep
 local function generate(tree, no_lines, addon_name)
 	local self = {}
 
-    local code = {" "}
+    local code = {}
 
     if !addon_name || (addon_name && !generated_names[addon_name]) then
         if (addon_name) then
@@ -614,6 +614,10 @@ local function generate(tree, no_lines, addon_name)
     end
 
     self:emit(tree)
+
+    if #code == 0 then
+        return "-- empty file"
+    end
 
     return concat(code)
 end
