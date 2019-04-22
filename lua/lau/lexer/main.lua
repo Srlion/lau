@@ -1,5 +1,3 @@
-require('ffi')
-
 local band = bit.band
 local isstring = function(v)
     return type(v) == "string"
@@ -19,13 +17,11 @@ local Keyword = lexer.Keyword;
 local Literal = lexer.Literal;
 local Op = lexer.Op;
 local Token = lexer.Token;
+
 local Keyword_KEYS = {}
 for k, v in pairs(Keyword) do
     Keyword_KEYS[k:lower()] = v
 end
-
-local uint64, int64 = ffi.typeof("uint64_t"), ffi.typeof("int64_t")
-local complex = ffi.typeof("complex")
 
 local function token2str(tok)
     if isstring(tok) and string.match(tok, "^TK_") then
@@ -160,17 +156,6 @@ local function skip_sep(ls)
     return ls.current == s and count or (-count - 1)
 end
 
-local function build_64int(str)
-    local u = str[#str - 2]
-    local x = (u == 117 and uint64(0) or int64(0))
-    local i = 1
-    while str[i] >= ASCII_0 and str[i] <= ASCII_9 do
-        x = 10 * x + (str[i] - ASCII_0)
-        i = i + 1
-    end
-    return x
-end
-
 -- Only lower case letters are accepted.
 local function byte_to_hexdigit(b)
     if b >= ASCII_0 and b <= ASCII_9 then
@@ -180,19 +165,6 @@ local function byte_to_hexdigit(b)
     else
         return -1
     end
-end
-
-local function build_64hex(str)
-    local u = str[#str - 2]
-    local x = (u == 117 and uint64(0) or int64(0))
-    local i = 3
-    while str[i] do
-        local n = byte_to_hexdigit(str[i])
-        if n < 0 then break end
-        x = 16 * x + n
-        i = i + 1
-    end
-    return x
 end
 
 local function strnumdump(str)
@@ -225,20 +197,8 @@ local function lex_number(ls)
         current = nextchar(ls)
     end
     local str = ls.save_buf
-    local x
-    if strsub(str, -1, -1) == 'i' then
-        local img = tonumber(strsub(str, 1, -2))
-        if img then x = complex(0, img) end
-    elseif strsub(str, -2, -1) == 'll' then
-        local t = strnumdump(str)
-        if t then
-            x = xp == 'e' and build_64int(t) or build_64hex(t)
-        end
-    else
-        x = str
-    end
-    if tonumber(x) then
-        return x
+    if tonumber(str) then
+        return str
     else
         lex_error(ls, 'TK_number', "malformed number")
     end
