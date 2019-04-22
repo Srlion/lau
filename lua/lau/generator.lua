@@ -32,58 +32,21 @@ local function comma_sep_list(ls, f)
     end
 end
 
-local is_types = {};local function add_type(name, list)
-    if istable(list) then
-        for _, v in ipairs(list) do
-            is_types[v] = name
-        end
-    else
-        is_types[list] = name
-    end
-end
+local is_types = {
+    func   = "isfunction",
+    bool   = "isbool",
+    matrix = "ismatrix",
+    number = "isnumber",
+    string = "isstring",
+    color  = "IsColor",
+    entity = "isentity",
+    table  = "istable",
+    angle  = "isangle",
+    vector = "isvector",
+    panel  = "ispanel"
+}
 
-add_type("isfunction", {
-    "function",
-    "func"
-})
-add_type("isbool", {
-    "bool",
-    "boolean"
-})
-add_type("ismatrix", {
-    "vmatrix",
-    "matrix"
-})
-add_type("isnumber", {
-    "number",
-    "int"
-})
-add_type("isstring", {
-    "string",
-    "str"
-})
-add_type("IsColor", "color")
-add_type("isentity", "entity")
-add_type("istable", "table")
-add_type("isangle", "angle")
-add_type("isvector", "vector")
-add_type("ispanel", "panel")
-
-local function add_if(self, left_func, left, right)
-    if left_func then
-        self:add_line(left_func)
-    end
-    self:expr_emit(left)
-    if left_func then
-    end
-    if right then
-        self:add_line("==")
-        self:add_line(right)
-    end
-    self:add_line(")then ")
-end
-
-local bad_argument_message = [[
+bad_argument_message = [[
 error("bad argument #%d to '%s' (expected '%s' got '" .. type(%s) .. "')", 2)]]
 local function check_params(self, params, func_name)
     if (!params) then return end
@@ -101,7 +64,7 @@ local function check_params(self, params, func_name)
         self:add_line("if(")
 
         if type then
-            type = type.value:lower()
+            type = type.value
 
             local is_type = is_types[type]
             if is_type then
