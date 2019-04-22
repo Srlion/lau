@@ -11,7 +11,7 @@ end
 
 local AST = {}
 
-function AST.expr_function(body, params, default, is_async)
+function AST.expr_function(body, params, is_async)
 	return build("FunctionExpression", {
 		body     = body,
 		params   = params,
@@ -20,13 +20,12 @@ function AST.expr_function(body, params, default, is_async)
 	})
 end
 
-function AST.function_decl(locald, id, body, params, default, is_async, is_static)
+function AST.function_decl(locald, id, body, params, is_async, is_static)
 	return build("FunctionDeclaration", {
 		locald   = locald,
         id		 = id,
         body	 = body,
         params	 = params,
-		default  = default,
         is_async = is_async,
         is_static = is_static
     })

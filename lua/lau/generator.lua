@@ -32,16 +32,117 @@ local function comma_sep_list(ls, f)
     end
 end
 
-local function add_default_values(self, defaults)
-    if (!defaults) then return end
+local is_types = {};local function add_type(name, list)
+    if istable(list) then
+        for _, v in ipairs(list) do
+            is_types[v] = name
+        end
+    else
+        is_types[list] = name
+    end
+end
 
-    for k, v in ipairs(defaults) do
+add_type("IsColor", {
+    "color",
+    "rgb",
+    "rgba"
+})
+add_type("isentity", {
+    "entity"
+})
+add_type("isfunction", {
+    "function",
+    "func"
+})
+add_type("isbool", {
+    "bool",
+    "boolean"
+})
+add_type("ismatrix", {
+    "vmatrix",
+    "matrix"
+})
+add_type("isnumber", {
+    "number",
+    "int"
+})
+add_type("isstring", {
+    "string",
+    "str"
+})
+add_type("istable", "table")
+add_type("isangle", "angle")
+add_type("isvector", "vector")
+add_type("ispanel", "panel")
+
+local function add_if(self, left_func, left, right)
+    if left_func then
+        self:add_line(left_func)
+    end
+    self:expr_emit(left)
+    if left_func then
+    end
+    if right then
+        self:add_line("==")
+        self:add_line(right)
+    end
+    self:add_line(")then ")
+end
+
+local bad_argument_message = [[
+error("bad argument #%d to '%s' (expected '%s' got '" .. type(%s) .. "')", 2)]]
+local function check_params(self, params, func_name)
+    if (!params) then return end
+
+    for i = 1, #params do
+        local param = params[i]
+
+        local type = param.type
+        local value = param.default_value
+
+        if not type and not value then
+            continue
+        end
+
         self:add_line("if(")
-        self:expr_emit(v.ident)
-        self:add_line("==nil)then ")
-        self:expr_emit(v.ident)
-        self:add_line("=")
-        self:expr_emit(v.value)
+
+        if type then
+            type = type.value:lower()
+
+            local is_type = is_types[type]
+            if is_type then
+                self:add_line("!" .. is_type .. "(")
+                self:expr_emit(param)
+                self:add_line(")")
+                type = is_type:sub(3)
+            else
+                self:add_line("type(")
+                self:expr_emit(param)
+                self:add_line(")!=\"" .. type .. "\"")
+            end
+
+            self:add_line(")then ")
+
+            if value then
+                goto VALUE
+            end
+
+            self:add_line(format(bad_argument_message, i, func_name, type, param.value))
+        else
+            self:expr_emit(param)
+            self:add_line("==")
+            self:add_line("nil")
+            self:add_line(")then ")
+        end
+
+        ::VALUE::
+
+        if value then
+            self:expr_emit(param)
+            self:add_line("=")
+            self:expr_emit(value)
+        end
+
         self:add_line(";end;")
     end
 end
@@ -101,7 +202,7 @@ function StatementRule:FunctionDeclaration(node)
 
 	self:add_line(")")
 
-    add_default_values(self, node.default)
+    check_params(self, node.params, node.id.value)
 
     self:add_section(node.body, node.is_async)
 
@@ -402,7 +503,7 @@ function ExpressionRule:FunctionExpression(node)
 
     self:add_line(")")
 
-    add_default_values(self, node.default)
+    check_params(self, node.params, "function")
 
     self:add_section(node.body, true)
 
@@ -548,78 +649,79 @@ function ExpressionRule:AwaitExpression(node)
     self:add_line(")")
 end
 
-local generated_names = {}
+local SELF = {}
+local SELF_Class = {__index = SELF}
+
+function SELF:add_section(body, omit_end)
+    self:list_emit(body)
+    self:add_line("end")
+    if not omit_end then
+        self:add_line(";")
+    end
+end
+
+function SELF:expr_emit(node)
+    local rule = ExpressionRule[node.kind]
+    if not rule then error("cannot find an expression rule for " .. node.kind) end
+    return rule(self, node)
+end
+
+function SELF:expr_list(exps)
+    comma_sep_list(exps, function(node, last)
+        self:expr_emit(node)
+        if (!last) then
+            self:add_line(",")
+        end
+    end)
+end
+
+function SELF:emit(node)
+    local rule = StatementRule[node.kind]
+    if not rule then error("cannot find a statement rule for " .. node.kind) end
+    rule(self, node)
+end
+
+function SELF:list_emit(node_list)
+    for i = 1, #node_list do
+        self:emit(node_list[i])
+    end
+end
 
 local rep = string.rep
-local function generate(tree, no_lines, addon_name)
-	local self = {}
+function SELF:ADDLINE_1(str, line)
+    local code = self.code
+    local current = self.current
 
-    local code = {}
-
-    if !addon_name || (addon_name && !generated_names[addon_name]) then
-        if (addon_name) then
-            generated_names[addon_name] = true
-        end
+    if (line && line > current) then
+        code[#code + 1] = rep("\n", line - current)
+        self.current = line
     end
+
+    code[#code + 1] = str
+end
+
+function SELF:ADDLINE_2(str)
+    local code = self.code
+    code[#code + 1] = str
+end
+
+local function generate(tree, no_lines)
+    local self = setmetatable({code = {}}, SELF_Class)
 
     if (no_lines) then
-        function self:add_line(str)
-            code[#code + 1] = str
-        end
+        self.add_line = self.ADDLINE_2
     else
-        local current = 1
-        function self:add_line(str, line)
-            if (line && line > current) then
-                code[#code + 1] = rep("\n", line - current)
-                current = line
-            end
-
-            code[#code + 1] = str
-        end
-    end
-
-    function self:add_section(body, omit_end)
-        self:list_emit(body)
-        self:add_line("end")
-        if not omit_end then
-            self:add_line(";")
-        end
-    end
-
-    function self:expr_emit(node)
-        local rule = ExpressionRule[node.kind]
-        if not rule then error("cannot find an expression rule for " .. node.kind) end
-        return rule(self, node)
-    end
-
-    function self:expr_list(exps)
-        comma_sep_list(exps, function(node, last)
-            self:expr_emit(node)
-            if (!last) then
-                self:add_line(",")
-            end
-        end)
-    end
-
-    function self:emit(node)
-        local rule = StatementRule[node.kind]
-        if not rule then error("cannot find a statement rule for " .. node.kind) end
-        rule(self, node)
-    end
-
-    function self:list_emit(node_list)
-        for i = 1, #node_list do
-            self:emit(node_list[i])
-        end
+        self.current = 1
+        self.add_line = self.ADDLINE_1
     end
 
     self:emit(tree)
 
-    if #code == 0 then
+    if #self.code == 0 then
         return "-- empty file"
     end
 
-    return concat(code)
+    return concat(self.code)
 end
 
 return generate

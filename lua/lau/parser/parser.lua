@@ -281,9 +281,9 @@ function parse_simple_expr()
     elseif token == Keyword.Fn then
         self:next()
 
-        local params, default, body = parse_body()
+        local params, body = parse_body()
 
-        return ast.expr_function(body, params, default, body.is_async)
+        return ast.expr_function(body, params, body.is_async)
     else
         return parse_primary_expr()
     end
@@ -358,7 +358,7 @@ end
 
 function parse_arrow_func_expr(name, vararg)
 	local reset = self:fake_llex()
-	local params, default
+	local params
 
 	local o_varargs = self_save("varargs", false)
 	local o_await = self_save("await", false)
@@ -369,7 +369,7 @@ function parse_arrow_func_expr(name, vararg)
 
 	if not name then
 		local status
-		status, params, default = pcall(parse_params)
+		status, params = pcall(parse_params)
 
 		if status == false then
 			params = false
@@ -399,7 +399,7 @@ function parse_arrow_func_expr(name, vararg)
 		self_save("varargs", o_varargs)
 		local is_async = self_save("await", o_await)
 
-		return ast.expr_function(body, params, default, is_async)
+		return ast.expr_function(body, params, is_async)
 	end
 end
 
@@ -602,9 +602,9 @@ function parse_func_stmt(is_local)
 		v = parse_field_expr(v)
 	end
 
-	local params, default, body = parse_body(needself)
+	local params, body = parse_body(needself)
 
-	return ast.function_decl(is_local, v, body, params, default, body.is_async)
+	return ast.function_decl(is_local, v, body, params, body.is_async)
 end
 
 function parse_class_stmt(is_local)
@@ -643,8 +643,8 @@ function parse_class_stmt(is_local)
 
 			expect(Token.Semicolon)
 		elseif next_is(Token.LParens) then
-			local params, default, body = parse_body(true)
-			local method = ast.function_decl(false, ident, body, params, default, body.is_async, is_static)
+			local params, body = parse_body(true)
+			local method = ast.function_decl(false, ident, body, params, body.is_async, is_static)
 
 			if c_ident.value == ident.value then
 				if ctor then
@@ -701,7 +701,7 @@ function parse_body(needself)
 	local o_varargs = self_save("varargs", false)
 	local o_await = self_save("await", false)
 
-	local params, default = parse_params(needself)
+	local params = parse_params(needself)
 
 	local body = parse_block()
 	body.is_async = self.await
@@ -709,7 +709,7 @@ function parse_body(needself)
 	self_save("varargs", o_varargs)
 	self_save("await", o_await)
 
-	return params, default, body
+	return params, body
 end
 
 function parse_block()
@@ -794,7 +794,7 @@ end
 function parse_params(needself)
 	expect(Token.LParens)
 
-	local args, default = {}, {}
+	local args = {}
 
 	if needself then
 		args[1] = ast.identifier(
@@ -808,36 +808,36 @@ function parse_params(needself)
 				local ident = parse_ident()
 				args[#args + 1] = ident
 
+				if consume(Token.Colon) then
+					ident.type = parse_ident("'type' for argument")
+				end
+
 				if consume(Op.Assign) then
-					local value = parse_expr()
-					default[#default + 1] = {
-						ident = ident,
-						value = value
-					}
+					ident.default_value = parse_expr()
 				end
 			elseif consume(Op.Ellipsis) then
 				args[#args + 1] = ast.expr_vararg()
 				self.varargs = true
 				break
 			else
-				self:error("expected identifier or '...'")
+				self:error("expected 'argument<name>'")
 			end
 		until not consume(Token.Comma)
 	end
 
 	expect(Token.RParens)
 
-	return args, default
+	return args
 end
 
-function parse_ident()
+function parse_ident(expected)
 	local token = self.token
 	if token == Token.Ident then
 		self:next()
 
 		return ast.identifier(token)
 	else
-		self:error(format("unexpected %s, expected identifier", token))
+		self:error(format("unexpected %s, expected %s", token, expected or "identifier"))
 	end
 end
 

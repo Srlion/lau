@@ -32,16 +32,17 @@ function Lau.RunFile(file_name, path, no_run, no_lines, addon_name)
 
     if no_run then return code end
 
-    print(code)
-    CompileString(code, file_name)()
+    -- print(code)
+    -- CompileString(code, file_name)()
 end
-
+-- bad argument #1 to 'generate' (table expected, got string)
+-- print(!type("") == )
 Lau.RunFile("test.lau")
 
-function Lau.Addon(addon_name)
-    return function(file_name, path, no_run, no_lines)
-        return Lau.RunFile(file_name, path, no_run, no_lines, addon_name)
-    end
+require("gaceio")
+print(gaceio.Write("garrysmod/data/wtf.lua", "hi"))
+function Lau.CompileFile(main_file, files)
+
 end
 
 concommand.Add("a", function()
