@@ -547,7 +547,7 @@ function parse_return_stmt()
 
 	expect(Token.Semicolon)
 
-	return ast.return_stmt(exps)
+	return ast.return_stmt(exps), true
 end
 
 function parse_break_stmt()
@@ -556,7 +556,7 @@ function parse_break_stmt()
 
 	expect(Token.Semicolon)
 
-	return ast.break_stmt(line)
+	return ast.break_stmt(line), true
 end
 
 function parse_continue_stmt()
@@ -565,7 +565,7 @@ function parse_continue_stmt()
 
 	expect(Token.Semicolon)
 
-	return ast.continue_stmt(line)
+	return ast.continue_stmt(line), true
 end
 
 function parse_label_stmt()
