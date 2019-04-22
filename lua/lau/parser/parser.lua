@@ -3,7 +3,7 @@ local ast 	   = include("lau/ast.lua")
 
 local format = string.format
 
-local lexer = Lau.lexer
+local lexer = lau.lexer
 local Keyword = lexer.Keyword
 local Literal = lexer.Literal
 local Op = lexer.Op

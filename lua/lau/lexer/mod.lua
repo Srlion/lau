@@ -1,6 +1,6 @@
-Lau.lexer = {};
+lau.lexer = {};
 
-lexer = Lau.lexer;
+lexer = lau.lexer;
 lexer.Keyword = include("lau/lexer/keyword.lua");
 lexer.Literal = include("lau/lexer/literal.lua");
 lexer.Op = include("lau/lexer/op.lua");

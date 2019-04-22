@@ -1,4 +1,4 @@
-local lexer = Lau.lexer
+local lexer = lau.lexer
 local Keyword = lexer.Keyword
 local Literal = lexer.Literal
 local Op = lexer.Op

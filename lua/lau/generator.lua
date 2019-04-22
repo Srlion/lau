@@ -1,6 +1,6 @@
 local strbyte, strsub = string.byte, string.sub
 
-local lexer   = Lau.lexer
+local lexer   = lau.lexer
 local Keyword = lexer.Keyword
 local Literal = lexer.Literal
 local Op 	  = lexer.Op
@@ -306,7 +306,7 @@ function StatementRule:LocalDeclaration(node)
 end
 
 function StatementRule:ReturnStatement(node)
-    self:add_line("do return")
+    self:add_line("return")
 
     local args = node.arguments
     if (args) then
@@ -314,15 +314,15 @@ function StatementRule:ReturnStatement(node)
         self:expr_list(args)
     end
 
-    self:add_line(";end;")
+    self:add_line(";")
 end
 
 function StatementRule:BreakStatement(node)
-    self:add_line("do break;end;", node.line)
+    self:add_line("break;", node.line)
 end
 
 function StatementRule:ContinueStatement(node)
-    self:add_line("do continue;end;", node.line)
+    self:add_line("continue;", node.line)
 end
 
 function StatementRule:LabelStatement(node)
@@ -554,7 +554,7 @@ local rep = string.rep
 local function generate(tree, no_lines, addon_name)
 	local self = {}
 
-    local code = {}
+    local code = {" "}
 
     if !addon_name || (addon_name && !generated_names[addon_name]) then
         if (addon_name) then
@@ -614,10 +614,6 @@ local function generate(tree, no_lines, addon_name)
     end
 
     self:emit(tree)
-
-    if #code == 0 then
-        code[1] = "-- empty file"
-    end
 
     return concat(code)
 end
