@@ -5,18 +5,18 @@ return function(__display, __debug)
 	local debug_getinfo = debug.getinfo
 
 	return ENUM, function(_enum, display, debug)
-		if (!display) then
+		if not display then
 			display = __display
 		end
 
-		if (!debug) then
+		if not debug then
 			debug = __debug
 		end
 
 		local function __tostring(s)
 			local func = debug_getinfo(2, "f").func
 
-			if (func == print || func == MsgC || func == Msg) then
+			if (func == print or func == MsgC or func == Msg) then
 				if (isstring(debug)) then
 					return debug
 				else

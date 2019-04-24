@@ -1,4 +1,3 @@
-let __ASYNC__;
 do {
     let unpack = unpack;
     let select = select;
@@ -15,50 +14,48 @@ do {
 
     let count, cached = 0, {};
     let fn get_coroutine(func, ...) {
-        let rets_n, rets;
+        let status, rets_n, rets;
         if count > 0 {
-            rets_n, rets = pack(
-                coroutine_resume(cached[count], func, ...)
-            );
+            status, rets_n, rets = coroutine_resume(cached[count], func, ...);
 
             cached[count] = nil;
             count -= 1;
 
-            if !rets[1] {
-                error(rets[2], 0);
+            if status == false {
+                error(rets_n, 0);
             } else {
-                unpack(rets, 2, rets_n)
+                unpack(rets, 1, rets_n)
             }
         } else {
             let _cached;
-            _cached = coroutine_create((...) => {
+            _cached = coroutine_create(... => {
                 let arg = {...};
-                while (true) {
-                    arg[1](
-                        unpack(arg, 2, table_maxn(arg))
+                while 1 {
+                    rets_n, rets = pack(
+                        arg[1](
+                            unpack(arg, 2, table_maxn(arg))
+                        )
                     );
 
                     count += 1;
                     cached[count] = _cached;
 
-                    arg = {coroutine_yield()};
+                    arg = {coroutine_yield(rets_n, rets)};
                 }
             });
 
-            rets_n, rets = pack(
-                coroutine_resume(_cached, func, ...)
-            );
+            status, rets_n, rets = coroutine_resume(_cached, func, ...);
 
-            if !rets[1] {
-                error(rets[2], 0);
+            if !status {
+                error(rets_n, 0);
             } else {
-                unpack(rets, 2, rets_n)
+                unpack(rets, 1, rets_n)
             }
         }
     }
 
-    fn __ASYNC__(func) {
-        (...) => {
+    fn Lau.__ASYNC__(func) {
+        ... => {
             if coroutine_running() {
                 func(...)
             } else {

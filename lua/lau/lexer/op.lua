@@ -6,7 +6,7 @@ local OP, Op = enum(
 	end
 )
 
-// Assignment
+-- Assignment
 Op("Assign", "'='")
 Op("AddAssign", "'+='")
 Op("SubAssign", "'-='")
@@ -16,7 +16,7 @@ Op("ModAssign", "'%='")
 Op("PowAssign", "'^='")
 Op("ConAssign", "'..='")
 
-// Arithmetic
+-- Arithmetic
 Op("Add", "'+'")
 Op("Sub", "'-'")
 Op("Div", "'/'")
@@ -24,7 +24,7 @@ Op("Mul", "'*'")
 Op("Mod", "'%'")
 Op("Pow", "'^'")
 
-// Comparison
+-- Comparison
 Op("Eq", "'=='")
 Op("Ne", "'!='")
 Op("Gt", "'>'")
@@ -32,12 +32,12 @@ Op("Lt", "'<'")
 Op("GtEq", "'>='")
 Op("LtEq", "'<='")
 
-// Logical
+-- Logical
 Op("LAnd", "'&&'")
 Op("LOr", "'||'")
 Op("Not", "'!'")
 
-// Misc
+-- Misc
 Op("Ellipsis", "'...'")
 Op("Concat", "'..'")
 Op("Dot", "'.'")

@@ -5,6 +5,7 @@ end
 
 local tonumber = tonumber
 local strsub, strbyte, strchar = string.sub, string.byte, string.char
+local concat = table.concat
 
 local ASCII_0, ASCII_9 = 48, 57
 local ASCII_a, ASCII_f, ASCII_z = 97, 102, 122
@@ -13,10 +14,10 @@ local ASCII_A, ASCII_Z = 65, 90
 local END_OF_STREAM = -1
 
 local lexer = Lau.lexer
-local Keyword = lexer.Keyword;
-local Literal = lexer.Literal;
-local Op = lexer.Op;
-local Token = lexer.Token;
+local Keyword = lexer.Keyword
+local Literal = lexer.Literal
+local Op = lexer.Op
+local Token = lexer.Token
 
 local Keyword_KEYS = {}
 for k, v in pairs(Keyword) do
@@ -49,9 +50,9 @@ end
 local function lex_error(ls, token, em, ...)
     local tok
     if token == "TK_string" then
-        tok = escape(ls.save_buf)
+        tok = escape(concat(ls.save_buf))
     elseif token == 'TK_name' or token == 'TK_number' then
-        tok = ls.save_buf
+        tok = concat(ls.save_buf)
     elseif token then
         tok = token2str(token)
     end
@@ -119,20 +120,20 @@ local function curr_is_newline(ls)
 end
 
 local function resetbuf(ls)
-    ls.save_buf = ''
+    ls.save_buf = {}
 end
 
 local function save(ls, c)
-    ls.save_buf = ls.save_buf .. c
+    table.insert(ls.save_buf, c)
 end
 
 local function save_and_next(ls)
-    ls.save_buf = ls.save_buf .. ls.current
+    table.insert(ls.save_buf, ls.current)
     nextchar(ls)
 end
 
 local function get_string(ls, init_skip, end_skip)
-    return strsub(ls.save_buf, init_skip + 1, - (end_skip + 1))
+    return strsub(concat(ls.save_buf), init_skip + 1, - (end_skip + 1))
 end
 
 local function inclinenumber(ls)
@@ -196,7 +197,7 @@ local function lex_number(ls)
         save(ls, c)
         current = nextchar(ls)
     end
-    local str = ls.save_buf
+    local str = concat(ls.save_buf)
     if tonumber(str) then
         return str
     else
@@ -370,108 +371,118 @@ local eq_ops = {
     ["*"] = {Op.Mul, Op.MulAssign}
 }
 
+local function read_identifier(ls)
+    local current = ls.current
+    ::REPEAT::
+    if not char_isident(current) then
+        goto BREAK
+    end
+    table.insert(ls.save_buf, current)
+    current = nextchar(ls)
+    goto REPEAT
+    ::BREAK::
+end
+
 local function llex(ls)
     resetbuf(ls)
-    while true do
-        local current = ls.current
-        if char_isident(current) then
-            if char_isdigit(current) then -- Numeric literal.
-                return Literal.Number(lex_number(ls)), true
-            end
 
-            save_and_next(ls)
-            local current = ls.current
-            while (true) do
-                if not char_isident(current) then
-                    break
-                end
-                ls.save_buf = ls.save_buf .. current
-                current = nextchar(ls)
-            end
+    ::REPEAT::
 
-            local s = get_string(ls, 0, 0)
-            local keyword = Keyword_KEYS[s]
-            if keyword then
-                s = keyword
-            elseif s == "true" or s == "false" then
-                s = Literal.Bool(s)
-            elseif s == "nil" then
-                s = Literal.Nil
-            else
-                s = Token.Ident(s)
-            end
-            return s, true
+    local current = ls.current
+    if char_isident(current) then
+        if char_isdigit(current) then -- Numeric literal.
+            return Literal.Number(lex_number(ls)), true
         end
-        if current == '\n' or current == '\r' then
-            inclinenumber(ls)
-            goto CONTINUE
-        elseif current == ' ' or current == '\t' or current == '\b' or current == '\f' then
+
+        save_and_next(ls)
+        read_identifier(ls)
+
+        local s = get_string(ls, 0, 0)
+        local keyword = Keyword_KEYS[s]
+        if keyword then
+            s = keyword
+        elseif s == "true" or s == "false" then
+            s = Literal.Bool(s)
+        elseif s == "nil" then
+            s = Literal.Nil
+        else
+            s = Token.Ident(s)
+        end
+        return s, true
+    end
+
+    if current == '\n' or current == '\r' then
+        inclinenumber(ls)
+        goto CONTINUE
+    elseif current == ' ' or current == '\t' or current == '\b' or current == '\f' then
+        nextchar(ls)
+        goto CONTINUE
+    elseif current == '=' then
+        local next_char = check_nextchar(ls)
+        if next_char == "=" then -- ("==")
             nextchar(ls)
-            goto CONTINUE
-        elseif current == '=' then
-            local next_char = check_nextchar(ls)
-            if next_char == "=" then -- ("==")
-                nextchar(ls)
-                return Op.Eq
-            elseif next_char == ">" then
-                nextchar(ls)
-                return Token.Arrow -- ("=>")
-            end
-            return Op.Assign -- ("=")
-        elseif current == "+" then
-            if nextchar(ls) == "=" then -- ("+=")
-                return Op.AddAssign
-            end
-            return Op.Add, true -- ("+")
-        elseif current == "-" then
-            if nextchar(ls) == "=" then -- ("-=")
-                return Op.SubAssign
-            end
-            return Op.Sub, true -- ("-")
-        elseif current == "/" then
-            local next_char = nextchar(ls)
-            if next_char == "=" then -- ("/=")
-                nextchar(ls)
-                return Op.DivAssign
-            elseif next_char == "/" then -- ("Comment")
-                skip_line(ls)
-                goto CONTINUE
-            elseif next_char == "*" then -- ("Comment")
-                read_long_comment(ls)
-                goto CONTINUE
-            end
-            return Op.Div -- ("/")
-        elseif current == ':' then
-            if nextchar(ls) == ":" then
-                return Token.Label -- ("::")
-            end
-            return Token.Colon, true -- (":")
-        elseif current == "." then
-            if nextchar(ls) == '.' then
-                local next_char = nextchar(ls)
-
-                if next_char == "." then
-                    return Op.Ellipsis -- ("...")
-                elseif next_char == "=" then
-                    return Op.ConAssign
-                end
-                return Op.Concat, true -- ("..")
-            end
-            return Op.Dot, true-- (".")
-        elseif current == "&" then
-            if nextchar(ls) == "&" then
-                nextchar(ls)
-                return Op.LAnd
-            end
-        elseif current == "|" then
-            if nextchar(ls) == "|" then
-                nextchar(ls)
-                return Op.LOr
-            end
-        elseif current == '"' then
-            local str = read_string(ls, current)
-            return Literal.String(str), true -- ("String")
+            return Op.Eq
+        elseif next_char == ">" then
+            nextchar(ls)
+            return Token.Arrow -- ("=>")
         end
+        return Op.Assign -- ("=")
+    elseif current == "+" then
+        if nextchar(ls) == "=" then -- ("+=")
+            return Op.AddAssign
+        end
+        return Op.Add, true -- ("+")
+    elseif current == "-" then
+        if nextchar(ls) == "=" then -- ("-=")
+            return Op.SubAssign
+        end
+        return Op.Sub, true -- ("-")
+    elseif current == "/" then
+        local next_char = nextchar(ls)
+        if next_char == "=" then -- ("/=")
+            nextchar(ls)
+            return Op.DivAssign
+        elseif next_char == "/" then -- ("Comment")
+            skip_line(ls)
+            goto CONTINUE
+        elseif next_char == "*" then -- ("Comment")
+            read_long_comment(ls)
+            goto CONTINUE
+        end
+        return Op.Div -- ("/")
+    elseif current == ':' then
+        if nextchar(ls) == ":" then
+            return Token.Label -- ("::")
+        end
+        return Token.Colon, true -- (":")
+    elseif current == "." then
+        if nextchar(ls) == '.' then
+            local next_char = nextchar(ls)
+
+            if next_char == "." then
+                return Op.Ellipsis -- ("...")
+            elseif next_char == "=" then
+                return Op.ConAssign
+            end
+            return Op.Concat, true -- ("..")
+        end
+        return Op.Dot, true-- (".")
+    elseif current == "&" then
+        if nextchar(ls) == "&" then
+            nextchar(ls)
+            return Op.LAnd
+        end
+    elseif current == "|" then
+        if nextchar(ls) == "|" then
+            nextchar(ls)
+            return Op.LOr
+        end
+    elseif current == '"' then
+        local str = read_string(ls, current)
+        return Literal.String(str), true -- ("String")
+    end
+
+    do
         local eq_op = eq_ops[current]
         if eq_op then
             if nextchar(ls) == "=" then
@@ -479,12 +490,16 @@ local function llex(ls)
             end
             return eq_op[1], true
         end
+
         local single_char = single_chars[current]
         if single_char then return single_char end
-        lex_error(ls, nil, "unexpected character (" .. current .. ")")
-
-        ::CONTINUE::
     end
+
+    lex_error(ls, nil, "unexpected character (" .. current .. ")")
+
+    ::CONTINUE::
+
+    goto REPEAT
 end
 
 local Lexer = {
@@ -516,7 +531,11 @@ function Lexer:lookahead()
 end
 
 local pairs = pairs
-local Empty = table.Empty
+local Empty = function(t)
+    for k, v in pairs(t) do
+        t[k] = nil
+    end
+end
 function Lexer:fake_llex()
     local old_self = {}
     for k, v in pairs(self) do

@@ -1,25 +1,26 @@
-local strbyte, strsub = string.byte, string.sub
-
 local lexer   = Lau.lexer
 local Keyword = lexer.Keyword
 local Literal = lexer.Literal
 local Op 	  = lexer.Op
 local Token   = lexer.Token
 
+local concat = table.concat
+local gsub   = string.gsub
+local byte   = string.byte
+local strsub = string.sub
+local format = string.format
+
 local function replace_cc(c)
     local esc = {
         ['\a'] = [[\a]], ['\b'] = [[\b]], ['\f'] = [[\f]], ['\n'] = [[\n]], ['\r'] = [[\r]], ['\t'] = [[\t]], ['\v'] = [[\v]]
     }
-    return esc[c] and esc[c] or ('\\' .. string.format("%d", string.byte(c)))
+    return esc[c] and esc[c] or ('\\' .. format("%d", byte(c)))
 end
 
 local function escape(s)
-    s = string.gsub(s, "[\"\\]", "\\%1")
-    return string.gsub(s, "%c", replace_cc)
+    s = gsub(s, "[\"\\]", "\\%1")
+    return gsub(s, "%c", replace_cc)
 end
-
-local concat = table.concat
-local format = string.format
 
 local function is_const(node, val)
     return node.kind == "Literal" and node.value == val
@@ -46,10 +47,14 @@ local is_types = {
     panel  = "ispanel"
 }
 
+local types_to_replace = {
+    player = "Player"
+}
+
 bad_argument_message = [[
 error("bad argument #%d to '%s' (expected '%s' got '" .. type(%s) .. "')", 2)]]
 local function check_params(self, params, func_name)
-    if (!params) then return end
+    if not params then return end
 
     for i = 1, #params do
         local param = params[i]
@@ -58,7 +63,7 @@ local function check_params(self, params, func_name)
         local value = param.default_value
 
         if not type and not value then
-            continue
+            goto CONTINUE
         end
 
         self:add_line("if(")
@@ -66,13 +71,14 @@ local function check_params(self, params, func_name)
         if type then
             type = type.value
 
-            local is_type = is_types[type]
+            local is_type = is_types[type:lower()]
             if is_type then
                 self:add_line("!" .. is_type .. "(")
                 self:expr_emit(param)
                 self:add_line(")")
                 type = is_type:sub(3)
             else
+                type = types_to_replace[type:lower()] or type
                 self:add_line("type(")
                 self:expr_emit(param)
                 self:add_line(")!=\"" .. type .. "\"")
@@ -101,6 +107,8 @@ local function check_params(self, params, func_name)
         end
 
         self:add_line(";end;")
+
+        ::CONTINUE::
     end
 end
 
@@ -117,10 +125,26 @@ local ReplacedKeyword = table_to_true({
 
 local CHANGE_KEYWORD = true
 local function should_replace(v)
-    if (ReplacedKeyword[v.value]) then
+    if ReplacedKeyword[v.value] then
         CHANGE_KEYWORD = false
         return true
     end
+end
+
+Lau.Modules = {
+    async = {
+        "__ASYNC__"
+    },
+    await = {
+        "__AWAIT__"
+    },
+    new = {
+        "__NEW__"
+    }
+}
+
+local function get_name(name)
+    return Lau.Modules[name][1]
 end
 
 local StatementRule = {}
@@ -135,7 +159,7 @@ function StatementRule:Text(node)
 end
 
 function StatementRule:FunctionDeclaration(node)
-	if (node.locald) then
+	if node.locald then
 		self:add_line("local ")
     	self:expr_emit(node.id)
 		self:add_line(";")
@@ -144,15 +168,15 @@ function StatementRule:FunctionDeclaration(node)
     self:expr_emit(node.id)
 	self:add_line("=")
 
-    if (node.is_async) then
-        self:add_line("__ASYNC__" .. "(")
+    if node.is_async then
+        self:add_line(get_name("async") .. "(")
     end
 
 	self:add_line("function(")
 
 	comma_sep_list(node.params, function(_node, last)
         self:expr_emit(_node)
-        if (!last) then
+        if not last then
         	self:add_line(",")
         end
     end)
@@ -163,53 +187,13 @@ function StatementRule:FunctionDeclaration(node)
 
     self:add_section(node.body, node.is_async)
 
-    if (node.is_async) then
+    if node.is_async then
         self:add_line(")")
     end
 end
 
-local function add_fields(self, fields, is_static)
-    for i = 1, #fields do
-        local field = fields[i]
-        if (is_static) then
-            if (!field.is_static) then continue end
-        elseif (field.is_static) then
-            continue
-        end
-
-        if (should_replace(field)) then
-            field.value = "[\"" .. field.value .. "\"]"
-            CHANGE_KEYWORD = true
-        end
-
-        self:expr_emit(field)
-        self:add_line("=")
-        self:expr_emit(field.body)
-        self:add_line(",")
-    end
-end
-
-function add_methods(self, methods, is_static)
-    for i = 1, #methods do
-        local method = methods[i]
-        if (is_static) then
-            if (!method.is_static) then continue end
-        elseif (method.is_static) then
-            continue
-        end
-
-        local id = method.id
-        if (should_replace(id)) then
-            id.value = "[\"" .. id.value .. "\"]"
-            CHANGE_KEYWORD = true
-        end
-
-        self:emit(method)
-    end
-end
-
 function StatementRule:ClassDeclaration(node)
-    if (node.is_local) then
+    if node.is_local then
         self:add_line("local ")
         self:expr_emit(node.name)
         self:add_line(";")
@@ -231,13 +215,13 @@ function StatementRule:ClassDeclaration(node)
 
         local is_static = v.is_static
 
-        local id = v.field && v || v.id
+        local id = v.field and v or v.id
         local name = id.value
 
-        if (name == "tostring" && !v.ctor && !v.field) then
+        if name == "tostring" and not v.ctor and not v.field then
             id.value = "__tostring"
 
-            if (!is_static) then
+            if not is_static then
                 self:add_line("index_table.")
                 self:emit(v)
             else
@@ -248,23 +232,23 @@ function StatementRule:ClassDeclaration(node)
                 self:add_line("});")
             end
 
-            continue
+            goto CONTINUE
         end
 
         self:expr_emit(class_iden)
 
-        if (!v.ctor && !is_static) then
+        if not v.ctor and not is_static then
             self:add_line(".class")
         end
 
-        if (should_replace(id)) then
-            id.value = "[\"" .. name .. "\"]"
+        if should_replace(id) then
+            id.new_value = "[\"" .. name .. "\"]"
             CHANGE_KEYWORD = true
         else
-            id.value = "." .. name
+            id.new_value = "." .. name
         end
 
-        if (v.ctor) then
+        if v.ctor then
             table.remove(v.params, 1) -- remove self
 
             table.insert(v.body, 1, {
@@ -278,7 +262,7 @@ function StatementRule:ClassDeclaration(node)
             })
 
             self:emit(v)
-        elseif (v.field) then
+        elseif v.field then
             self:expr_emit(v)
             self:add_line("=")
             self:expr_emit(v.body)
@@ -286,6 +270,8 @@ function StatementRule:ClassDeclaration(node)
         else
             self:emit(v)
         end
+
+        ::CONTINUE::
     end
 
     self:add_line("end;")
@@ -301,7 +287,7 @@ function StatementRule:IfStatement(node)
     while (else_body) do
         local cond = else_body.cond
 
-        if (cond) then
+        if cond then
             self:add_line("elseif ")
             self:expr_emit(cond)
             self:add_line(" then ")
@@ -355,7 +341,7 @@ function StatementRule:LocalDeclaration(node)
     self:expr_list(node.locals)
 
     local expressions = node.expressions
-    if (expressions) then
+    if expressions then
         self:add_line("=")
         self:expr_list(expressions)
     end
@@ -367,7 +353,7 @@ function StatementRule:ReturnStatement(node)
     self:add_line("return")
 
     local args = node.arguments
-    if (args) then
+    if args then
         self:add_line(" ")
         self:expr_list(args)
     end
@@ -426,8 +412,8 @@ function ExpressionRule:ParenthesesExpression(node)
 end
 
 function ExpressionRule:Identifier(node)
-    local v = node.value
-    if (CHANGE_KEYWORD && ReplacedKeyword[v]) then
+    local v = node.new_value or node.value
+    if CHANGE_KEYWORD and ReplacedKeyword[v] then
         v = "​" .. v
     end
     self:add_line(v, node.line)
@@ -436,16 +422,16 @@ end
 function ExpressionRule:Literal(node)
     local val = node.value
     local key = node.key
-    if (key == "String") then
+    if key == "String" then
         val = format("\"%s\"", escape(val))
-    elseif (key == "Nil") then
+    elseif key == "Nil" then
         val = "nil"
     end
     self:add_line(val, node.line)
 end
 
 function ExpressionRule:FunctionExpression(node)
-    if (node.is_async) then
+    if node.is_async then
         self:add_line("__ASYNC__" .. "(")
     end
 
@@ -453,7 +439,7 @@ function ExpressionRule:FunctionExpression(node)
 
     comma_sep_list(node.params, function(_node, last)
         self:expr_emit(_node)
-        if (!last) then
+        if not last then
             self:add_line(",")
         end
     end)
@@ -464,7 +450,7 @@ function ExpressionRule:FunctionExpression(node)
 
     self:add_section(node.body, true)
 
-    if (node.is_async) then
+    if node.is_async then
         self:add_line(")")
     end
 end
@@ -477,7 +463,7 @@ function ExpressionRule:MemberExpression(node)
         self:add_line("[")
         self:expr_emit(prop)
         self:add_line("]")
-    elseif (should_replace(prop)) then
+    elseif should_replace(prop) then
         self:add_line("[\"", prop.line)
         self:expr_emit(prop)
         self:add_line("\"]")
@@ -523,13 +509,13 @@ function ExpressionRule:TableExpression(node)
     for i = 1, last do
         local kv = node.keyvals[i]
         local key, val = kv[1], kv[2]
-        if (key) then
-            if (should_replace(key)) then
+        if key then
+            if should_replace(key) then
                 self:add_line("[\"", key.line)
                 self:expr_emit(key)
                 self:add_line("\"]=")
                 CHANGE_KEYWORD = true
-            elseif (key.key == "Ident") then
+            elseif key.key == "Ident" then
                 self:expr_emit(key)
                 self:add_line("=")
             else
@@ -542,7 +528,7 @@ function ExpressionRule:TableExpression(node)
             self:expr_emit(val)
         end
 
-        if (i != last) then
+        if i ~= last then
             self:add_line(",")
         end
     end
@@ -555,7 +541,7 @@ function ExpressionRule:CallExpression(node)
     self:add_line("(")
 
     local args = node.arguments
-    if (args) then
+    if args then
         self:expr_list(args)
     end
 
@@ -569,7 +555,7 @@ function ExpressionRule:SendExpression(node)
     self:add_line("(")
 
     local args = node.arguments
-    if (args) then
+    if args then
         self:expr_list(args)
     end
 
@@ -585,14 +571,14 @@ function ExpressionRule:NewExpression(node)
     local name = node.name
     local line = name.line
 
-    self:add_line("__NEW__" .. "(", line)
+    self:add_line(get_name("new") .. "(", line)
     self:expr_emit(name)
     self:add_line(",\"", line)
     self:expr_emit(name)
     self:add_line("\"", line)
 
     local args = node.arguments
-    if (args) then
+    if args then
         self:add_line(",", line)
         self:expr_list(args)
     end
@@ -601,7 +587,7 @@ function ExpressionRule:NewExpression(node)
 end
 
 function ExpressionRule:AwaitExpression(node)
-    self:add_line("__AWAIT__" .. "(")
+    self:add_line(get_name("await") .. "(")
     self:expr_emit(node.expression)
     self:add_line(")")
 end
@@ -626,7 +612,7 @@ end
 function SELF:expr_list(exps)
     comma_sep_list(exps, function(node, last)
         self:expr_emit(node)
-        if (!last) then
+        if not last then
             self:add_line(",")
         end
     end)
@@ -649,7 +635,7 @@ function SELF:ADDLINE_1(str, line)
     local code = self.code
     local current = self.current
 
-    if (line && line > current) then
+    if line and line > current then
         code[#code + 1] = rep("\n", line - current)
         self.current = line
     end
@@ -665,7 +651,7 @@ end
 local function generate(tree, no_lines)
     local self = setmetatable({code = {}}, SELF_Class)
 
-    if (no_lines) then
+    if no_lines then
         self.add_line = self.ADDLINE_2
     else
         self.current = 1
@@ -673,10 +659,6 @@ local function generate(tree, no_lines)
     end
 
     self:emit(tree)
-
-    if #self.code == 0 then
-        return "-- empty file"
-    end
 
     return concat(self.code)
 end

@@ -214,44 +214,48 @@ function parse_primary_expr()
     	self:error("unexpected symbol " .. peek())
     end
 
-    while 1 do
-        local token = self.token
+	::REPEAT::
 
-        if token == Op.Dot then
-        	self:next()
+	local token = self.token
 
-        	if not next_is_in({Literal, Token.Ident} or next_is(Literal.Nil)) then
-        		self:error(
-        			format("unexpected %s, expected <key>", peek())
-        		)
-        	end
+	if token == Op.Dot then
+		self:next()
 
-        	local key = peek()
-        	self:next()
+		if not next_is_in{Literal, Token.Ident} or next_is(Literal.Nil) then
+			self:error(
+				format("unexpected %s, expected <key>", peek())
+			)
+		end
 
-        	if key == Token.Ident then
-        		v = ast.expr_property(v, ast.identifier(key))
-        	else
-        		v = ast.expr_index(v, ast.literal(key))
-        	end
+		local key = peek()
+		self:next()
 
-            vk = "indexed"
-        elseif token == Token.LBracket then
-            local key = parse_bracket_expr()
-            vk, v = "indexed", ast.expr_index(v, key)
-        elseif token == Token.Colon then
-            self:next()
+		if key == Token.Ident then
+			v = ast.expr_property(v, ast.identifier(key))
+		else
+			v = ast.expr_index(v, ast.literal(key))
+		end
 
-            local key = parse_ident()
-            local args = parse_args()
-            vk, v = "call", ast.expr_method_call(v, key, args)
-        elseif token ==  Token.LParens then
-            local args = parse_args()
-            vk, v = "call", ast.expr_function_call(v, args)
-        else
-            break
-        end
-    end
+		vk = "indexed"
+	elseif token == Token.LBracket then
+		local key = parse_bracket_expr()
+		vk, v = "indexed", ast.expr_index(v, key)
+	elseif token == Token.Colon then
+		self:next()
+
+		local key = parse_ident()
+		local args = parse_args()
+		vk, v = "call", ast.expr_method_call(v, key, args)
+	elseif token ==  Token.LParens then
+		local args = parse_args()
+		vk, v = "call", ast.expr_function_call(v, args)
+	else
+		goto BREAK
+	end
+
+	goto REPEAT
+
+	::BREAK::
 
     return v, vk
 end
@@ -408,6 +412,7 @@ end
 ]]
 
 local statements
+local let_statements
 function parse_stmt()
 	local is_let = consume(Keyword.Let)
 
@@ -428,12 +433,14 @@ function parse_stmt()
 				self:error("Enum is not implemented yet")
 			end
 		}
+
+		let_statements = {Keyword.Fn, Keyword.Class, Keyword.Enum}
 	end
 
 	local statement = statements[self.token]
 
 	if is_let then
-		if next_is_in{Keyword.Fn, Keyword.Class, Keyword.Enum} then
+		if next_is_in(let_statements) then
 			return statement(true)
 		else
 			return parse_let_stmt()
@@ -590,16 +597,18 @@ end
 function parse_func_stmt(is_local)
 	self:next()
 
-	local need_self = false
 	local v = parse_ident()
 
-	while next_is(Op.Dot) do
-		v = parse_field_expr(v)
-	end
+	local needself = false
+	if not is_local then
+		while next_is(Op.Dot) do
+			v = parse_field_expr(v)
+		end
 
-	if next_is(Token.Colon) then
-		needself = true
-		v = parse_field_expr(v)
+		if next_is(Token.Colon) then
+			needself = true
+			v = parse_field_expr(v)
+		end
 	end
 
 	local params, body = parse_body(needself)

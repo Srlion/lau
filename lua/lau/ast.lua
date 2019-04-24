@@ -56,14 +56,14 @@ local function concat_append(ts, node)
 end
 
 function AST.expr_binop(op, expa, expb)
-    local binop_body = (op != Op.Concat && {
+    local binop_body = (op ~= Op.Concat and {
     	operator = op,
     	left = expa,
     	right = expb
     })
 
     if binop_body then
-        if op == Op.LAnd || op == Op.LOr then
+        if op == Op.LAnd or op == Op.LOr then
             return build("LogicalExpression", binop_body)
         else
             return build("BinaryExpression", binop_body)
