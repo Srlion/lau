@@ -336,6 +336,15 @@ function StatementRule:ForStatement(node)
     self:add_section(node.body)
 end
 
+function StatementRule:ForEachStatement(node)
+    self:add_line("for ")
+    self:expr_list(node.vars)
+    self:add_line(" in ")
+    self:expr_list(node.exps)
+    self:add_line(" do ")
+    self:add_section(node.body)
+end
+
 function StatementRule:LocalDeclaration(node)
     self:add_line("local ")
     self:expr_list(node.locals)

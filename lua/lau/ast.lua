@@ -120,10 +120,18 @@ end
 
 function AST.for_stmt(var, init, last, step, body)
     return build("ForStatement", {
-    	var = var,
+    	var  = var,
     	init = init,
     	last = last,
     	step = step,
+    	body = body
+    })
+end
+
+function AST.foreach_stmt(vars, exps, body)
+    return build("ForEachStatement", {
+    	vars = vars,
+    	exps = exps,
     	body = body
     })
 end

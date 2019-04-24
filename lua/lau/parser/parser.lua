@@ -40,7 +40,7 @@ local parse_expr, parse_expr_list, parse_binop_expr, parse_unop_expr, parse_prim
 	parse_table_expr, parse_arrow_func_expr
 
 local parse_stmt, parse_if_stmt, parse_do_stmt, parse_while_stmt, parse_for_stmt,
-	parse_let_stmt, parse_return_stmt, parse_break_stmt, parse_continue_stmt,
+	parse_foreach_stmt, parse_let_stmt, parse_return_stmt, parse_break_stmt, parse_continue_stmt,
 	parse_label_stmt, parse_goto_stmt, parse_func_stmt, parse_class_stmt
 
 local self
@@ -422,6 +422,7 @@ function parse_stmt()
 			[Keyword.Do] = parse_do_stmt,
 			[Keyword.While] = parse_while_stmt,
 			[Keyword.For] = parse_for_stmt,
+			[Keyword.ForEach] = parse_foreach_stmt,
 			[Keyword.Return] = parse_return_stmt,
 			[Keyword.Break] = parse_break_stmt,
 			[Keyword.Continue] = parse_continue_stmt,
@@ -517,6 +518,28 @@ function parse_for_stmt()
 	local body = parse_block()
 
 	return ast.for_stmt(var, init, last, step, body)
+end
+
+function parse_foreach_stmt()
+	self:next()
+
+	expect(Token.LParens)
+
+	local vars = {}
+
+	repeat
+		vars[#vars + 1] = parse_ident()
+	until not consume(Token.Comma)
+
+	expect(Keyword.In)
+
+	local exps = parse_expr_list(ast, ls)
+
+	expect(Token.RParens)
+
+	local body = parse_block()
+
+	return ast.foreach_stmt(vars, exps, body)
 end
 
 function parse_let_stmt()
