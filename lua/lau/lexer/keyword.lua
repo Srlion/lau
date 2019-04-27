@@ -8,6 +8,7 @@ local KEYWORD, Keyword = enum(
 	end
 )
 
+Keyword("Async")
 Keyword("Await")
 Keyword("Class")
 Keyword("Else")
@@ -15,7 +16,7 @@ Keyword("Enum")
 Keyword("Extends")
 Keyword("For")
 Keyword("ForEach")
-Keyword("Fn")
+Keyword("Fn", "'function'")
 Keyword("If")
 Keyword("In")
 Keyword("Let")

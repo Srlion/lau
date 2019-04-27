@@ -132,14 +132,25 @@ local function should_replace(v)
 end
 
 Lau.Modules = {
+    colon_call  = {
+        pos = 1,
+        "__CALL__"
+    },
     async = {
+        pos = 2,
         "__ASYNC__"
     },
     await = {
-        "__AWAIT__"
+        "__AWAIT__",
+        "await_failed"
     },
     new = {
+        pos = 3,
         "__NEW__"
+    },
+    promise = {
+        pos = 4,
+        "Promise"
     }
 }
 
@@ -268,6 +279,10 @@ function StatementRule:ClassDeclaration(node)
             self:expr_emit(v.body)
             self:add_line(";")
         else
+            if is_static then
+                table.remove(v.params, 1)
+            end
+
             self:emit(v)
         end
 
@@ -441,7 +456,7 @@ end
 
 function ExpressionRule:FunctionExpression(node)
     if node.is_async then
-        self:add_line("__ASYNC__" .. "(")
+        self:add_line(get_name("async") .. "(")
     end
 
     self:add_line("function(")
@@ -558,12 +573,23 @@ function ExpressionRule:CallExpression(node)
 end
 
 function ExpressionRule:SendExpression(node)
-    self:expr_emit(node.receiver)
-    self:add_line(":")
-    self:expr_emit(node.method)
-    self:add_line("(")
-
+    local method = node.method
     local args = node.arguments
+
+    if should_replace(method) then
+        self:add_line(get_name("colon_call") .. "(")
+        self:expr_emit(node.receiver)
+        self:add_line(",\"", method.line)
+        self:expr_emit(method)
+        self:add_line("\",")
+        CHANGE_KEYWORD = true
+    else
+        self:expr_emit(node.receiver)
+        self:add_line(":")
+        self:expr_emit(method)
+        self:add_line("(")
+    end
+
     if args then
         self:expr_list(args)
     end
@@ -668,6 +694,10 @@ local function generate(tree, no_lines)
     end
 
     self:emit(tree)
+
+    if #self.code == 0 then
+        return " "
+    end
 
     return concat(self.code)
 end

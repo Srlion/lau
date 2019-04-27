@@ -12,54 +12,68 @@ do {
         return select("#", ...), {...};
     }
 
-    let count, cached = 0, {};
-    let fn get_coroutine(func, ...) {
-        let status, rets_n, rets;
-        if count > 0 {
-            status, rets_n, rets = coroutine_resume(cached[count], func, ...);
+    /*
+        aff will fix it later
+    */
+    // let count, cached = 0, {};
+    // let fn get_coroutine(func, ...) {
+    //     let status, rets_n, rets;
+    //     if count > 0 {
+    //         status, rets_n, rets = coroutine_resume(cached[count], func, ...);
 
-            cached[count] = nil;
-            count -= 1;
+    //         cached[count] = nil;
+    //         count -= 1;
 
-            if status == false {
-                error(rets_n, 0);
-            } else {
-                unpack(rets, 1, rets_n)
-            }
-        } else {
-            let _cached;
-            _cached = coroutine_create(... => {
-                let arg = {...};
-                while 1 {
-                    rets_n, rets = pack(
-                        arg[1](
-                            unpack(arg, 2, table_maxn(arg))
-                        )
-                    );
+    //         if status == false {
+    //             error(rets_n, 0);
+    //         } else {
+    //             unpack(rets, 1, rets_n)
+    //         }
+    //     } else {
+    //         let _cached;
+    //         _cached = coroutine_create(... => {
+    //             let arg = {...};
+    //             while 1 {
+    //                 rets_n, rets = pack(
+    //                     arg[1](
+    //                         unpack(arg, 2, table_maxn(arg))
+    //                     )
+    //                 );
 
-                    count += 1;
-                    cached[count] = _cached;
+    //                 count += 1;
+    //                 cached[count] = _cached;
 
-                    arg = {coroutine_yield(rets_n, rets)};
-                }
-            });
+    //                 arg = {coroutine_yield(rets_n, rets)};
+    //             }
+    //         });
 
-            status, rets_n, rets = coroutine_resume(_cached, func, ...);
+    //         status = coroutine_resume(_cached, func, ...);
 
-            if !status {
-                error(rets_n, 0);
-            } else {
-                unpack(rets, 1, rets_n)
-            }
-        }
-    }
+    //         if !status {
+    //             error(rets_n, 0);
+    //         } else {
+    //             // unpack(rets, 1, rets_n)
+    //         }
+    //     }
+    // }
 
     fn Lau.__ASYNC__(func) {
         ... => {
             if coroutine_running() {
                 func(...)
             } else {
-                get_coroutine(func, ...)
+                let rets_n, rets = pack(
+                    coroutine_resume(
+                        coroutine_create(func),
+                        ...
+                    )
+                );
+
+                if !rets[1] {
+                    error(rets[1], 0);
+                } else {
+                    unpack(rets, 2, rets_n)
+                }
             }
         }
     }

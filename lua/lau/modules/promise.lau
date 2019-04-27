@@ -1,5 +1,210 @@
-let Promise; do {
-    fn Promise() {
-        "ok"
+// Thanks to https://github.com/bluejava/zousan && https://github.com/hjmmc/lua-promise lol
+do {
+    let pcall = pcall;
+    let isfunction = isfunction;
+
+    let PENDING   = "Pending";
+    let FULFILLED = "Fulfilled";
+    let REJECTED  = "Rejected";
+
+    let fn resolve_client(client, value) {
+        let on_res = client.on_res;
+        if on_res {
+            let status;
+            status, value = pcall(on_res, value);
+            if status {
+                client.promise:resolve(value);
+            } else {
+                client.promise:reject(value);
+            }
+        } else {
+            client.promise:resolve(value);
+        }
     }
+
+    let fn reject_client(client, reason) {
+        let on_rej = client.on_rej;
+        if on_rej {
+            let status;
+            status, reason = pcall(on_rej, reason);
+            if status {
+                client.promise:resolve(reason);
+            } else {
+                client.promise:reject(reason);
+            }
+        } else {
+            client.promise:reject(reason);
+        }
+    }
+
+    let class Promise {
+        static REJECTED  = REJECTED;
+        static FULFILLED = FULFILLED;
+        static PENDING   = PENDING;
+
+        static resolve(val) {
+            new Promise(res => {
+                res(val);
+            })
+        }
+
+        static reject(val) {
+            new Promise((_, rej) => {
+                rej(val);
+            })
+        }
+
+        static all(promises: table) {
+            new Promise((res, rej) => {
+                let result, len = {}, #promises;
+
+                if len == 0 {
+                    resolve(result);
+                    return;
+                }
+
+                let count = 0;
+                for (i = 1, len) {
+                    promises[i]:then(ret => {
+                        count += 1;
+                        result[i] = ret;
+
+                        if count == len {
+                            res(result);
+                        }
+                    }, err => {
+                        rej(err, i);
+                    });
+                }
+            })
+        }
+
+        static is_promise(p) {
+            getmetatable(p) == index_table
+        }
+
+        Promise(func) {
+            self.state = PENDING;
+            self.trace = debug.traceback("", 3);
+
+            if isfunction(func) {
+                let status, err = pcall(func, val => {
+                    self:resolve(val);
+                }, err => {
+                    self:reject(err);
+                });
+
+                if status == false {
+                    self:reject(err);
+                }
+            } else if func != nil {
+                error("invalid type '" .. type(func) .. "' passed to Promise, expected function");
+            }
+        }
+
+        resolve(value) {
+            if self.state != PENDING {
+                return;
+            }
+
+            if self == value {
+                return;
+            }
+
+            if Promise.is_promise(value) {
+                let first = true;
+                value:then(value => {
+                    if first {
+                        first = false;
+                        self:resolve(value);
+                    }
+                }, err => {
+                    if first {
+                        first = false;
+                        self:reject(err);
+                    }
+                });
+
+                return;
+            }
+
+            self.state = FULFILLED;
+            self.value = value;
+
+            timer.Simple(0, () => {
+                let client = self.client;
+                if client {
+                    for (i = 1, #client) {
+                        resolve_client(client[i], value);
+                    }
+                }
+            });
+        }
+
+        reject(reason) {
+            if self.state != PENDING {
+                return;
+            }
+
+            self.state = REJECTED;
+            self.value = reason;
+
+            let client = self.client;
+            if client {
+                timer.Simple(0, () => {
+                    for (i = 1, #client) {
+                        reject_client(client[i], reason);
+                    }
+                });
+            } else {
+                timer.Simple(0, () => {
+                    if !self.handled {
+                        ErrorNoHalt("[ERROR] uncaught promise, error: " .. reason);
+                        ErrorNoHalt(self.trace:gsub("stack traceback:\n", "", 1) .. "\n");
+                    }
+                });
+            }
+        }
+
+        then(on_res: func = nil, on_rej: func = nil) {
+            let promise = new Promise();
+            let client = {
+                on_res: on_res,
+                on_rej: on_rej,
+                promise: promise
+            };
+
+            let state = self.state;
+            if state == PENDING {
+                if self.client {
+                    table.insert(self.client, client);
+                } else {
+                    self.client = {client};
+                }
+            } else {
+                let value = self.value;
+
+                self.handled = true;
+                timer.Simple(0, () => {
+                    if state == FULFILLED {
+                        resolve_client(client, value);
+                    } else {
+                        reject_client(client, value);
+                    }
+                });
+            }
+
+            promise
+        }
+
+        catch(on_rej) {
+            self:then(nil, on_rej)
+        }
+
+        tostring() {
+            "Promise <" .. self.state .. ">"
+        }
+    }
+
+    Lau.Promise = Promise;
 }

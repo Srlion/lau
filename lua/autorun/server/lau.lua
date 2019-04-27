@@ -76,6 +76,7 @@ function Lau.RunFile(file_name, no_run, no_lines, no_locals)
     if not tree then return end
 
     local code = generate(tree, no_lines)
+    if not code then return end
 
     if not no_locals then
         code = Modules_Locals .. code
@@ -100,6 +101,7 @@ function Lau.AddCLFile(file_name)
     if not full_path then return end
 
     local code = Lau.RunFile(file_name, true)
+    if not code then return end
 
     full_path = "garrysmod/" .. full_path
     full_path = ext_lua(full_path)
@@ -184,13 +186,15 @@ function Lau.CompileDir(name, main_file)
 end
 
 do
-    for k, v in pairs(Lau.Modules) do
-        for _, v2 in pairs(v) do
+    for k, v in SortedPairsByMemberValue(Lau.Modules, "pos") do
+        local locals = ""
+        for _, v2 in ipairs(v) do
+            locals = locals .. "local " .. v2 .. "=Lau." .. v2 .. ";"
             Modules_Locals = Modules_Locals .. "local " .. v2 .. "=Lau." .. v2 .. ";"
         end
         local path = "lau/modules/" .. k .. ".lau"
         Lau.AddCLFile(path)
-        Modules_Codes = Modules_Codes .. Lau.RunFile(path, true, true, true)
+        Modules_Codes = Modules_Codes .. Lau.RunFile(path, true, true, true) .. locals
     end
     RunString(Modules_Codes)
 end
@@ -205,10 +209,12 @@ do
 
             if state == CL or SH then
                 Lau.AddCLFile(dir .. v)
+                Lau.CompileFile(dir .. v)
             end
 
             if state == SV or SH then
                 Lau.RunFile(dir .. v)
+                Lau.CompileFile(dir .. v)
             end
         end
     end
@@ -217,3 +223,24 @@ do
     load_dir("autorun/server", SV)
     load_dir("autorun/client", CL)
 end
+
+local lower = string.lower
+local function startBench()
+    local bench = include("bench.lua")
+    print("\n\n\n\n\n------------------")
+    -- jit.off();
+    for i = 1, 6 do
+        print()
+        bench.Compare({
+            function()
+                debug.getinfo(2)
+            end,
+            function()
+                debug.traceback(nil, 2)
+            end
+        }, 99999)
+    end
+    jit.on();
+    print("\n------------------")
+end
+concommand.Add("a", startBench)

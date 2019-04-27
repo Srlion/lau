@@ -1,33 +1,49 @@
 do {
-    let getmetatable = getmetatable;
-
     let coroutine_running = coroutine.running;
     let coroutine_resume  = coroutine.resume;
     let coroutine_yield   = coroutine.yield;
 
-    let fn error(err) {
+    let fn Error(err) {
         MsgC(Color(137, 222, 255), "[ERROR] ", err, "\n");
     }
 
+    let AWAIT_FAILED = {
+        __tostring: () => {
+            "await failed, error: " .. tostring(self.err)
+        }
+    };
+
+    let await_failed_index = {
+        __index: AWAIT_FAILED
+    };
+
     fn Lau.__AWAIT__(promise) {
-        if !Promise.isPromise(promise) {
+        if !Promise.is_promise(promise) {
             promise = Promise.resolve(promise);
         }
 
         let co = coroutine_running();
+        if !co {
+            error("await can only be used in async functions");
+        }
 
-        promise:done(... => {
-            let status, err = coroutine_resume(co, true, ...);
+        promise:then(val => {
+            let status, err = coroutine_resume(co, val);
             if status == false {
-                error(err);
+                Error(err);
             }
         }, err => {
-            let status, err = coroutine_resume(co, false, err);
+            let status, err = coroutine_resume(co, setmetatable({err: err}, await_failed_index));
             if status == false {
-                error(err);
+                Error(err);
             }
         });
 
         coroutine_yield(promise)
+    }
+
+    let getmetatable = getmetatable;
+    fn Lau.await_failed(tbl) {
+        getmetatable(tbl) == await_failed_index
     }
 }

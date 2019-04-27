@@ -180,16 +180,19 @@ function parse_unop_expr()
     end
 end
 
-function parse_primary_expr()
+local async_error_msg = "expected 'function' for async keyword"
+function parse_primary_expr(is_async)
     local v, vk
 
     local line
 
     if next_is(Token.LParens) then
-    	local arrow_func = parse_arrow_func_expr()
+    	local arrow_func = parse_arrow_func_expr(nil, nil, is_async)
     	if arrow_func then
     		return arrow_func
     	end
+
+		if is_async then self:error(async_error_msg) end
 
     	self:next()
 
@@ -200,17 +203,24 @@ function parse_primary_expr()
         vk, v = "var", parse_ident()
 
         if next_is(Token.Arrow) then
-        	return parse_arrow_func_expr(v)
-        end
-    elseif consume(Keyword.New) then
+        	return parse_arrow_func_expr(v, nil, is_async)
+		end
+
+		if is_async then self:error(async_error_msg, self.lastline) end
+	elseif consume(Keyword.New) then
+		if is_async then self:error(async_error_msg, self.lastline) end
+
     	local c = parse_ident()
     	local args = parse_args()
 
         vk, v = "call", ast.new_expr(c, args)
-    elseif consume(Keyword.Await) then
+	elseif consume(Keyword.Await) then
+		if is_async then self:error(async_error_msg, self.lastline) end
+
     	self.await = true
         vk, v = "call", ast.await_expr(parse_expr())
-    else
+	else
+		if is_async then self:error(async_error_msg) end
     	self:error("unexpected symbol " .. peek())
     end
 
@@ -264,32 +274,44 @@ function parse_simple_expr()
     local token = self.token
     if not token then
     	self:error("expected expression", self.lastline)
-    end
+	end
 
-    if is_literal(token) then
+	local is_async
+	if token == Keyword.Async then
+		is_async = true
+		token = self:next()
+	end
+
+	if is_literal(token) then
+		if is_async then self:error(async_error_msg) end
+
     	self:next()
 
     	return ast.literal(token)
 	elseif token == Op.Ellipsis then
 		if self:next() == Token.Arrow then
-			return parse_arrow_func_expr(ast.expr_vararg(), true)
+			return parse_arrow_func_expr(ast.expr_vararg(), true, is_async)
 		end
+
+		if is_async then self:error(async_error_msg) end
 
         if not self.varargs then
         	self:error("cannot use '...' outside a vararg function", self.lastline)
         end
 
         return ast.expr_vararg()
-    elseif token == Token.LBrace then
+	elseif token == Token.LBrace then
+		if is_async then self:error(async_error_msg) end
+
         return parse_table_expr()
     elseif token == Keyword.Fn then
         self:next()
 
         local params, body = parse_body()
 
-        return ast.expr_function(body, params, body.is_async)
+        return ast.expr_function(body, params, is_async)
     else
-        return parse_primary_expr()
+        return parse_primary_expr(is_async)
     end
 
     self:next()
@@ -360,7 +382,7 @@ function parse_table_expr()
     return ast.expr_table(kvs)
 end
 
-function parse_arrow_func_expr(name, vararg)
+function parse_arrow_func_expr(name, vararg, is_async)
 	local reset = self:fake_llex()
 	local params
 
@@ -401,7 +423,7 @@ function parse_arrow_func_expr(name, vararg)
 		end
 
 		self_save("varargs", o_varargs)
-		local is_async = self_save("await", o_await)
+		self_save("await", o_await)
 
 		return ast.expr_function(body, params, is_async)
 	end
@@ -412,9 +434,10 @@ end
 ]]
 
 local statements
-local let_statements
+local main_statements
 function parse_stmt()
-	local is_let = consume(Keyword.Let)
+	local is_let   = consume(Keyword.Let)
+	local is_async = consume(Keyword.Async)
 
 	if not statements then
 		statements = {
@@ -435,14 +458,19 @@ function parse_stmt()
 			end
 		}
 
-		let_statements = {Keyword.Fn, Keyword.Class, Keyword.Enum}
+		main_statements = {Keyword.Fn, Keyword.Class, Keyword.Enum}
 	end
 
-	local statement = statements[self.token]
+	local token = self.token
+	local statement = statements[token]
+
+	if is_async and token ~= Keyword.Fn then
+		expect(Keyword.Fn)
+	end
 
 	if is_let then
-		if next_is_in(let_statements) then
-			return statement(true)
+		if next_is_in(main_statements) then
+			return statement(true, is_async)
 		else
 			return parse_let_stmt()
 		end
@@ -617,7 +645,7 @@ function parse_goto_stmt()
 	return ast.goto_stmt(label)
 end
 
-function parse_func_stmt(is_local)
+function parse_func_stmt(is_local, is_async)
 	self:next()
 
 	local v = parse_ident()
@@ -636,7 +664,7 @@ function parse_func_stmt(is_local)
 
 	local params, body = parse_body(needself)
 
-	return ast.function_decl(is_local, v, body, params, body.is_async)
+	return ast.function_decl(is_local, v, body, params, is_async)
 end
 
 function parse_class_stmt(is_local)
@@ -655,16 +683,26 @@ function parse_class_stmt(is_local)
 	local c_body = {}
 
 	while not next_is(Token.RBrace) do
-		local is_static = false
+		local token = peek()
 
-		if peek() == Keyword.Static then
+		local is_static = false
+		local is_async  = false
+
+		if token == Keyword.Static then
 			is_static = true
+			token = self:next()
+		end
+
+		if token == Keyword.Async then
+			is_async = true
 			self:next()
 		end
 
 		local ident = parse_ident()
+		token = peek()
 
-		if next_is(Op.Assign) then
+		if token == Op.Assign then
+			if is_async then self:error(async_error_msg, self.lastline) end
 			self:next()
 
 			ident.field = true
@@ -674,9 +712,9 @@ function parse_class_stmt(is_local)
 			table.insert(c_body, ident)
 
 			expect(Token.Semicolon)
-		elseif next_is(Token.LParens) then
+		elseif token == Token.LParens then
 			local params, body = parse_body(true)
-			local method = ast.function_decl(false, ident, body, params, body.is_async, is_static)
+			local method = ast.function_decl(false, ident, body, params, is_async, is_static)
 
 			if c_ident.value == ident.value then
 				if ctor then
@@ -736,7 +774,6 @@ function parse_body(needself)
 	local params = parse_params(needself)
 
 	local body = parse_block()
-	body.is_async = self.await
 
 	self_save("varargs", o_varargs)
 	self_save("await", o_await)
