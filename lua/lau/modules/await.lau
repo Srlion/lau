@@ -18,13 +18,13 @@ do {
     };
 
     fn Lau.__AWAIT__(promise) {
-        if !Promise.is_promise(promise) {
-            promise = Promise.resolve(promise);
-        }
-
         let co = coroutine_running();
         if !co {
-            error("await can only be used in async functions");
+            error("await can only be used in async functions", 2);
+        }
+
+        if !Promise.is_promise(promise) {
+            promise = Promise.resolve(promise);
         }
 
         promise:then(val => {

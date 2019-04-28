@@ -579,9 +579,7 @@ function ExpressionRule:SendExpression(node)
     if should_replace(method) then
         self:add_line(get_name("colon_call") .. "(")
         self:expr_emit(node.receiver)
-        self:add_line(",\"", method.line)
-        self:expr_emit(method)
-        self:add_line("\",")
+        self:add_line(",\"" .. method.value .. "\",", method.line)
         CHANGE_KEYWORD = true
     else
         self:expr_emit(node.receiver)

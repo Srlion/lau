@@ -51,16 +51,17 @@ local add_tracked_file; do
         tracked_files[file_name] = {time(file_name, "LUA"), cl}
     end
 
-    hook.Add("Tick", "Lau.Reload_Files", function()
+    hook.Add("Think", "Lau.Reload_Files", function()
         for name, v in pairs(tracked_files) do
-            if v[1] ~= time(name, "LUA") then
+            local last_update = time(name, "LUA")
+            if v[1] ~= last_update then
                 if v[2] then
                     Lau.AddCLFile(name)
                 else
                     Lau.RunFile(name)
                 end
 
-                v[1] = time(name, "LUA")
+                v[1] = last_update
             end
         end
     end)
@@ -101,7 +102,7 @@ function Lau.AddCLFile(file_name)
     if not full_path then return end
 
     local code = Lau.RunFile(file_name, true)
-    if not code then return end
+    if not code then code = " " end
 
     full_path = "garrysmod/" .. full_path
     full_path = ext_lua(full_path)
@@ -129,7 +130,7 @@ function Lau.CompileFile(main_file, dir)
     end
 
     local code = Lau.RunFile(main_file, true)
-    if not code then return end
+    if not code then code = " " end
 
     main_file = "lua/" .. main_file:StripExtension() .. ".lua"
 
