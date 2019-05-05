@@ -27,7 +27,7 @@ do {
             promise = Promise.resolve(promise);
         }
 
-        promise:then(val => {
+        promise:next(val => {
             let status, err = coroutine_resume(co, val);
             if status == false {
                 Error(err);
@@ -39,7 +39,7 @@ do {
             }
         });
 
-        coroutine_yield(promise)
+        coroutine_yield()
     }
 
     let getmetatable = getmetatable;

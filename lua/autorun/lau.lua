@@ -7,4 +7,24 @@ if CLIENT then
         end
         include(name)
     end
+
+    Lau.Modules = {
+        colon_call  = {
+            pos = 1
+        },
+        async = {
+            pos = 2
+        },
+        await = {},
+        new = {
+            pos = 3
+        },
+        promise = {
+            pos = 4
+        }
+    }
+
+    for k, v in SortedPairsByMemberValue(Lau.Modules, "pos") do
+        Lau.RunFile("lau/modules/" .. k .. ".lau")
+    end
 end

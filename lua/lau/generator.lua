@@ -281,6 +281,16 @@ function StatementRule:ClassDeclaration(node)
         else
             if is_static then
                 table.remove(v.params, 1)
+            else
+                local body = v.body
+                body = body[#body]
+
+                if not body or body.kind != "ReturnStatement" then
+                    table.insert(v.body, {
+                        kind = "Text",
+                        text = "return self;"
+                    })
+                end
             end
 
             self:emit(v)

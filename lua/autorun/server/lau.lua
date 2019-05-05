@@ -17,6 +17,7 @@ end
 local lex = include("lau/lexer/mod.lua")
 local parse = include("lau/parser/parser.lua")
 local generate = include("lau/generator.lua")
+AddCSLuaFile("lau/generator.lua")
 
 -- this is cool
 local function get_path(name)
@@ -225,23 +226,20 @@ do
     load_dir("autorun/client", CL)
 end
 
-local lower = string.lower
-local function startBench()
-    local bench = include("bench.lua")
-    print("\n\n\n\n\n------------------")
-    -- jit.off();
-    for i = 1, 6 do
-        print()
-        bench.Compare({
-            function()
-                debug.getinfo(2)
-            end,
-            function()
-                debug.traceback(nil, 2)
-            end
-        }, 99999)
-    end
-    jit.on();
-    print("\n------------------")
-end
-concommand.Add("a", startBench)
+-- local function startBench()
+--     local bench = include("bench.lua")
+--     print("\n\n\n\n\n------------------")
+--     jit.off();
+--     for i = 1, 6 do
+--         print()
+--         bench.Compare({
+--             function()
+--             end,
+--             function()
+--             end
+--         }, 999999)
+--     end
+--     jit.on();
+--     print("\n------------------")
+-- end
+-- concommand.Add("a", startBench)

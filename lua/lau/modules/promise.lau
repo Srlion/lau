@@ -64,8 +64,8 @@ do {
                 }
 
                 let count = 0;
-                for (i = 1, len) {
-                    promises[i]:then(ret => {
+                for i = 1, len {
+                    promises[i]:next(ret => {
                         count += 1;
                         result[i] = ret;
 
@@ -113,7 +113,7 @@ do {
 
             if Promise.is_promise(value) {
                 let first = true;
-                value:then(value => {
+                value:next(value => {
                     if first {
                         first = false;
                         self:resolve(value);
@@ -134,7 +134,7 @@ do {
             timer.Simple(0, () => {
                 let client = self.client;
                 if client {
-                    for (i = 1, #client) {
+                    for i = 1, #client {
                         resolve_client(client[i], value);
                     }
                 }
@@ -152,7 +152,7 @@ do {
             let client = self.client;
             if client {
                 timer.Simple(0, () => {
-                    for (i = 1, #client) {
+                    for i = 1, #client {
                         reject_client(client[i], reason);
                     }
                 });
@@ -166,7 +166,7 @@ do {
             }
         }
 
-        then(on_res: func = nil, on_rej: func = nil) {
+        next(on_res: func = nil, on_rej: func = nil) {
             let promise = new Promise();
             let client = {
                 on_res: on_res,
@@ -198,7 +198,7 @@ do {
         }
 
         catch(on_rej) {
-            self:then(nil, on_rej)
+            self:next(nil, on_rej)
         }
 
         tostring() {

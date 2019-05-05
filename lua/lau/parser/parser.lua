@@ -475,7 +475,7 @@ function parse_stmt()
 			return parse_let_stmt()
 		end
 	elseif statement then
-		return statement(is_let)
+		return statement(is_let, is_async)
 	else
 		return parse_call_assign()
 	end
@@ -526,8 +526,6 @@ end
 function parse_for_stmt()
 	self:next()
 
-	expect(Token.LParens)
-
 	local var = parse_ident()
 	expect(Op.Assign)
 
@@ -541,8 +539,6 @@ function parse_for_stmt()
 		step = parse_expr()
 	end
 
-	expect(Token.RParens)
-
 	local body = parse_block()
 
 	return ast.for_stmt(var, init, last, step, body)
@@ -550,8 +546,6 @@ end
 
 function parse_foreach_stmt()
 	self:next()
-
-	expect(Token.LParens)
 
 	local vars = {}
 
@@ -562,9 +556,6 @@ function parse_foreach_stmt()
 	expect(Keyword.In)
 
 	local exps = parse_expr_list(ast, ls)
-
-	expect(Token.RParens)
-
 	local body = parse_block()
 
 	return ast.foreach_stmt(vars, exps, body)
