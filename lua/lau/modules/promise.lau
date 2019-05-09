@@ -194,7 +194,7 @@ do {
                 });
             }
 
-            promise
+            return promise;
         }
 
         catch(on_rej) {
