@@ -16,9 +16,6 @@ if CLIENT then
             pos = 2
         },
         await = {},
-        new = {
-            pos = 3
-        },
         promise = {
             pos = 4
         }

@@ -1,11 +1,11 @@
 local enum = include("lau/enum.lua")
 local LITERAL, Literal = enum(
-	function(s)
-		return "'" .. s.value .. "'"
-	end,
-	function(s)
-		return "Literal(" .. s.key:lower() .. "): " .. s
-	end
+    function(s)
+        return "'" .. s.value .. "'"
+    end,
+    function(s)
+        return "Literal(" .. s.key:lower() .. "): " .. s
+    end
 )
 
 Literal("Bool")

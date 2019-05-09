@@ -12,20 +12,20 @@ end
 local AST = {}
 
 function AST.expr_function(body, params, is_async)
-	return build("FunctionExpression", {
-		body     = body,
-		params   = params,
-		default  = default,
-		is_async = is_async
-	})
+    return build("FunctionExpression", {
+        body     = body,
+        params   = params,
+        default  = default,
+        is_async = is_async
+    })
 end
 
 function AST.function_decl(locald, id, body, params, is_async, is_static)
-	return build("FunctionDeclaration", {
-		locald   = locald,
-        id		 = id,
-        body	 = body,
-        params	 = params,
+    return build("FunctionDeclaration", {
+        locald   = locald,
+        id         = id,
+        body     = body,
+        params     = params,
         is_async = is_async,
         is_static = is_static
     })
@@ -41,8 +41,8 @@ end
 
 function AST.expr_unop(op, v)
     return build("UnaryExpression", {
-    	operator = op,
-    	argument = v
+        operator = op,
+        argument = v
     })
 end
 
@@ -57,9 +57,9 @@ end
 
 function AST.expr_binop(op, expa, expb)
     local binop_body = (op ~= Op.Concat and {
-    	operator = op,
-    	left = expa,
-    	right = expb
+        operator = op,
+        left = expa,
+        right = expb
     })
 
     if binop_body then
@@ -70,8 +70,8 @@ function AST.expr_binop(op, expa, expb)
         end
     else
         return build("ConcatenateExpression", {
-        	left = expa,
-        	right = expb
+            left = expa,
+            right = expb
         })
     end
 end
@@ -99,15 +99,15 @@ end
 function AST.if_stmt(cond, body, else_body)
     return build("IfStatement", {
         cond = cond,
-    	body = body,
-    	else_body = else_body
+        body = body,
+        else_body = else_body
     })
 end
 
 function AST.while_stmt(cond, body)
     return build("WhileStatement", {
         cond = cond,
-    	body = body
+        body = body
     })
 end
 
@@ -120,19 +120,19 @@ end
 
 function AST.for_stmt(var, init, last, step, body)
     return build("ForStatement", {
-    	var  = var,
-    	init = init,
-    	last = last,
-    	step = step,
-    	body = body
+        var  = var,
+        init = init,
+        last = last,
+        step = step,
+        body = body
     })
 end
 
 function AST.foreach_stmt(vars, exps, body)
     return build("ForEachStatement", {
-    	vars = vars,
-    	exps = exps,
-    	body = body
+        vars = vars,
+        exps = exps,
+        body = body
     })
 end
 
@@ -161,16 +161,16 @@ function AST.expr_property(obj, prop)
 end
 
 function AST.expr_index(obj, prop)
-	local node = AST.expr_property(obj, prop)
-	node.computed = true
+    local node = AST.expr_property(obj, prop)
+    node.computed = true
 
-	return node
+    return node
 end
 
 function AST.expr_parentheses(expr)
-	return build("ParenthesesExpression", {
-		value = expr
-	})
+    return build("ParenthesesExpression", {
+        value = expr
+    })
 end
 
 function AST.label_stmt(label)
@@ -183,10 +183,10 @@ end
 
 function AST.expr_method_call(v, method, args)
     return build("SendExpression", {
-    	receiver = v,
-    	method = method,
-    	arguments = args
-	})
+        receiver = v,
+        method = method,
+        arguments = args
+    })
 end
 
 function AST.statement_expr(expr)
@@ -195,8 +195,8 @@ end
 
 function AST.expr_function_call(v, args)
     return build("CallExpression", {
-    	callee = v,
-    	arguments = args
+        callee = v,
+        arguments = args
     })
 end
 
@@ -214,13 +214,6 @@ end
 
 function AST.await_expr(expr)
     return build("AwaitExpression", {expression = expr})
-end
-
-function AST.new_expr(name, args)
-    return build("NewExpression", {
-        name = name,
-        arguments = args
-    })
 end
 
 function AST.chunk(body, chunkname)

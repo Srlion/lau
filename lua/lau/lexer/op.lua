@@ -1,9 +1,9 @@
 local enum = include("lau/enum.lua")
 local OP, Op = enum(
-	nil,
-	function(s)
-		return "Op(" .. s .. ")"
-	end
+    nil,
+    function(s)
+        return "Op(" .. s .. ")"
+    end
 )
 
 -- Assignment

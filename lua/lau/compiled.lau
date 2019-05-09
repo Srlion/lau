@@ -4,12 +4,14 @@ fn Lau.RunFile(name) {
     if isstring(name) {
         name = name:StripExtension() .. ".lua";
     }
-    include(name)
+
+    return include(name);
 }
 
 fn Lau.AddCLFile(name) {
     if isstring(name) {
         name = name:StripExtension() .. ".lua";
     }
-    AddCSLuaFile(name)
+
+    return AddCSLuaFile(name);
 }

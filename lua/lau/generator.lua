@@ -1,7 +1,7 @@
 local lexer   = Lau.lexer
 local Keyword = lexer.Keyword
 local Literal = lexer.Literal
-local Op 	  = lexer.Op
+local Op       = lexer.Op
 local Token   = lexer.Token
 
 local concat = table.concat
@@ -27,9 +27,9 @@ local function is_const(node, val)
 end
 
 local function comma_sep_list(ls, f)
-	local n = #ls
+    local n = #ls
     for i = 1, n do
-    	f(ls[i], i == n)
+        f(ls[i], i == n)
     end
 end
 
@@ -63,7 +63,7 @@ local function check_params(self, params, func_name)
         local value = param.default_value
 
         if not type and not value then
-            goto CONTINUE
+            continue
         end
 
         self:add_line("if(")
@@ -107,8 +107,6 @@ local function check_params(self, params, func_name)
         end
 
         self:add_line(";end;")
-
-        ::CONTINUE::
     end
 end
 
@@ -144,10 +142,6 @@ Lau.Modules = {
         "__AWAIT__",
         "await_failed"
     },
-    new = {
-        pos = 3,
-        "__NEW__"
-    },
     promise = {
         pos = 4,
         "Promise"
@@ -170,29 +164,29 @@ function StatementRule:Text(node)
 end
 
 function StatementRule:FunctionDeclaration(node)
-	if node.locald then
-		self:add_line("local ")
-    	self:expr_emit(node.id)
-		self:add_line(";")
-	end
+    if node.locald then
+        self:add_line("local ")
+        self:expr_emit(node.id)
+        self:add_line(";")
+    end
 
     self:expr_emit(node.id)
-	self:add_line("=")
+    self:add_line("=")
 
     if node.is_async then
         self:add_line(get_name("async") .. "(")
     end
 
-	self:add_line("function(")
+    self:add_line("function(")
 
-	comma_sep_list(node.params, function(_node, last)
+    comma_sep_list(node.params, function(_node, last)
         self:expr_emit(_node)
         if not last then
-        	self:add_line(",")
+            self:add_line(",")
         end
     end)
 
-	self:add_line(")")
+    self:add_line(")")
 
     check_params(self, node.params, node.id.value)
 
@@ -215,14 +209,14 @@ function StatementRule:ClassDeclaration(node)
     local class_iden = node.name
 
     self:expr_emit(node.name)
-    self:add_line("={class={};};local index_table={__index=")
+    self:add_line("={class={};};local class_meta={__index=")
 
     self:expr_emit(node.name)
     self:add_line(".class};")
 
-    local body = node.body
-    for i = 1, #body do
-        local v = body[i]
+    local node_body = node.body
+    for i = 1, #node_body do
+        local v = node_body[i]
 
         local is_static = v.is_static
 
@@ -233,7 +227,7 @@ function StatementRule:ClassDeclaration(node)
             id.value = "__tostring"
 
             if not is_static then
-                self:add_line("index_table.")
+                self:add_line("class_meta.")
                 self:emit(v)
             else
                 self:add_line("setmetatable(")
@@ -243,7 +237,7 @@ function StatementRule:ClassDeclaration(node)
                 self:add_line("});")
             end
 
-            goto CONTINUE
+            continue
         end
 
         self:expr_emit(class_iden)
@@ -260,17 +254,22 @@ function StatementRule:ClassDeclaration(node)
         end
 
         if v.ctor then
-            table.remove(v.params, 1) -- remove self
+            v.params[1].value = "Self"
+            local body = v.body
 
-            table.insert(v.body, 1, {
+            table.insert(body, 1, {
                 kind = "Text",
-                text = "local self=setmetatable({}, index_table);"
+                text = "local self=setmetatable({}, class_meta);"
             })
 
-            table.insert(v.body, {
-                kind = "Text",
-                text = "return self;"
-            })
+            local last_stmt = body[#body]
+
+            if not last_stmt or last_stmt.kind != "ReturnStatement" then
+                table.insert(body, {
+                    kind = "Text",
+                    text = "return self;"
+                })
+            end
 
             self:emit(v)
         elseif v.field then
@@ -279,14 +278,12 @@ function StatementRule:ClassDeclaration(node)
             self:expr_emit(v.body)
             self:add_line(";")
         else
-            if is_static then
-                table.remove(v.params, 1)
-            else
+            if not is_static then
                 local body = v.body
-                body = body[#body]
+                local last_stmt = body[#body]
 
-                if not body or body.kind != "ReturnStatement" then
-                    table.insert(v.body, {
+                if not last_stmt or last_stmt.kind != "ReturnStatement" then
+                    table.insert(body, {
                         kind = "Text",
                         text = "return self;"
                     })
@@ -295,8 +292,6 @@ function StatementRule:ClassDeclaration(node)
 
             self:emit(v)
         end
-
-        ::CONTINUE::
     end
 
     self:add_line("end;")
@@ -608,25 +603,6 @@ end
 function StatementRule:DoStatement(node)
     self:add_line("do ")
     self:add_section(node.body)
-end
-
-function ExpressionRule:NewExpression(node)
-    local name = node.name
-    local line = name.line
-
-    self:add_line(get_name("new") .. "(", line)
-    self:expr_emit(name)
-    self:add_line(",\"", line)
-    self:expr_emit(name)
-    self:add_line("\"", line)
-
-    local args = node.arguments
-    if args then
-        self:add_line(",", line)
-        self:expr_list(args)
-    end
-
-    self:add_line(")")
 end
 
 function ExpressionRule:AwaitExpression(node)

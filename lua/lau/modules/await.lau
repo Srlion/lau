@@ -9,7 +9,7 @@ do {
 
     let AWAIT_FAILED = {
         __tostring: () => {
-            "await failed, error: " .. tostring(self.err)
+            "await error: " .. tostring(self.err)
         }
     };
 
@@ -23,7 +23,7 @@ do {
             error("await can only be used in async functions", 2);
         }
 
-        if !Promise.is_promise(promise) {
+        if !Promise:is_promise(promise) {
             promise = Promise.resolve(promise);
         }
 
@@ -39,7 +39,7 @@ do {
             }
         });
 
-        coroutine_yield()
+        return coroutine_yield();
     }
 
     let getmetatable = getmetatable;

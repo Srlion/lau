@@ -1,5 +1,5 @@
 do {
     fn Lau.__CALL__(t, m, ...) {
-        t[m](t, ...)
+        return t[m](t, ...);
     }
 }

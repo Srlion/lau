@@ -43,19 +43,19 @@ do {
         static PENDING   = PENDING;
 
         static resolve(val) {
-            new Promise(res => {
+            return Promise:new(res => {
                 res(val);
-            })
+            });
         }
 
         static reject(val) {
-            new Promise((_, rej) => {
+            return Promise:new((_, rej) => {
                 rej(val);
-            })
+            });
         }
 
         static all(promises: table) {
-            new Promise((res, rej) => {
+            return Promise:new((res, rej) => {
                 let result, len = {}, #promises;
 
                 if len == 0 {
@@ -76,14 +76,14 @@ do {
                         rej(err, i);
                     });
                 }
-            })
+            });
         }
 
         static is_promise(p) {
-            getmetatable(p) == index_table
+            getmetatable(p) == class_meta
         }
 
-        Promise(func) {
+        new(func) {
             self.state = PENDING;
             self.trace = debug.traceback("", 3);
 
@@ -111,7 +111,7 @@ do {
                 return;
             }
 
-            if Promise.is_promise(value) {
+            if Promise:is_promise(value) {
                 let first = true;
                 value:next(value => {
                     if first {
@@ -167,7 +167,7 @@ do {
         }
 
         next(on_res: func = nil, on_rej: func = nil) {
-            let promise = new Promise();
+            let promise = Promise:new();
             let client = {
                 on_res: on_res,
                 on_rej: on_rej,
@@ -198,7 +198,7 @@ do {
         }
 
         catch(on_rej) {
-            self:next(nil, on_rej)
+            return self:next(nil, on_rej);
         }
 
         tostring() {

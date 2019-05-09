@@ -1,11 +1,11 @@
 local enum = include("lau/enum.lua")
 local KEYWORD, Keyword = enum(
-	function(s)
-		return "'" .. s.key:lower() .. "'"
-	end,
-	function(s)
-		return "Keyword(" .. s .. ")"
-	end
+    function(s)
+        return "'" .. s.key:lower() .. "'"
+    end,
+    function(s)
+        return "Keyword(" .. s .. ")"
+    end
 )
 
 Keyword("Async")
@@ -20,7 +20,6 @@ Keyword("Fn", "'function'")
 Keyword("If")
 Keyword("In")
 Keyword("Let")
-Keyword("New")
 Keyword("Return")
 Keyword("Static")
 Keyword("While")
