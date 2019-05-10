@@ -39,6 +39,14 @@ function AST.class_decl(name, body, is_local)
     })
 end
 
+function AST.use_stmt(ident, locals, with_update)
+    return build("UseStatement", {
+        ident  = ident,
+        locals = locals,
+        with_update = with_update
+    })
+end
+
 function AST.expr_unop(op, v)
     return build("UnaryExpression", {
         operator = op,

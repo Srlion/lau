@@ -52,7 +52,7 @@ local add_tracked_file; do
         tracked_files[file_name] = {time(file_name, "LUA"), cl}
     end
 
-    hook.Add("Think", "Lau.Reload_Files", function()
+    timer.Create("Lau.ReloadFiles", 0.2, 0, function()
         for name, v in pairs(tracked_files) do
             local last_update = time(name, "LUA")
             if v[1] ~= last_update then
@@ -92,10 +92,12 @@ function Lau.RunFile(file_name, no_run, no_lines, no_locals)
     full_path = ext_lua(full_path)
 
     gaceio.Write(full_path, code)
-    include(ext_lua(file_name))
+    local rets = {include(ext_lua(file_name))}
     gaceio.Delete(full_path)
 
     add_tracked_file(file_name)
+
+    return unpack(rets, table.maxn(rets))
 end
 
 function Lau.AddCLFile(file_name)

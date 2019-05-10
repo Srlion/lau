@@ -27,5 +27,6 @@ Keyword("Do")
 Keyword("Break")
 Keyword("Continue")
 Keyword("Goto")
+Keyword("Use")
 
 return KEYWORD

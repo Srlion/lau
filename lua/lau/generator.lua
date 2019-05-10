@@ -26,10 +26,14 @@ local function is_const(node, val)
     return node.kind == "Literal" and node.value == val
 end
 
-local function comma_sep_list(ls, f)
-    local n = #ls
+local function comma_sep_list(self, t, f)
+    local n = #t
     for i = 1, n do
-        f(ls[i], i == n)
+        f(t[i])
+
+        if i != n then
+            self:add_line(",")
+        end
     end
 end
 
@@ -129,25 +133,6 @@ local function should_replace(v)
     end
 end
 
-Lau.Modules = {
-    colon_call  = {
-        pos = 1,
-        "__CALL__"
-    },
-    async = {
-        pos = 2,
-        "__ASYNC__"
-    },
-    await = {
-        "__AWAIT__",
-        "await_failed"
-    },
-    promise = {
-        pos = 4,
-        "Promise"
-    }
-}
-
 local function get_name(name)
     return Lau.Modules[name][1]
 end
@@ -162,6 +147,7 @@ end
 function StatementRule:Text(node)
     self:add_line(node.text, node.line)
 end
+ExpressionRule.Text = StatementRule.Text
 
 function StatementRule:FunctionDeclaration(node)
     if node.locald then
@@ -178,14 +164,7 @@ function StatementRule:FunctionDeclaration(node)
     end
 
     self:add_line("function(")
-
-    comma_sep_list(node.params, function(_node, last)
-        self:expr_emit(_node)
-        if not last then
-            self:add_line(",")
-        end
-    end)
-
+    self:expr_list(node.params)
     self:add_line(")")
 
     check_params(self, node.params, node.id.value)
@@ -295,6 +274,58 @@ function StatementRule:ClassDeclaration(node)
     end
 
     self:add_line("end;")
+end
+
+function StatementRule:UseStatement(node)
+    local ident = node.ident
+    local locals = node.locals
+
+    if not locals and ident.kind == "MemberExpression" then
+        ident, locals = ident.object, {ident.property}
+    end
+
+    local add_locals = function()
+        if locals then
+            self:expr_list(locals)
+        else
+            self:expr_emit(ident)
+        end
+    end
+
+    local add_values = function()
+        self:add_line("=")
+
+        if locals then
+            comma_sep_list(self, locals, function(v)
+                self:expr_emit(ident)
+                self:add_line("[\"" .. v.value .. "\"]", v.line)
+            end)
+        else
+            self:expr_emit(ident)
+        end
+    end
+
+    local with_update = node.with_update
+    self:add_line("local ")
+    add_locals()
+
+    if with_update then
+        self:add_line(";")
+        self:add_line(get_name("use") .. "(")
+        self:expr_emit(ident)
+        self:add_line(",function(t)")
+        add_locals()
+        ident = {
+            kind = "Text",
+            text = "t"
+        }
+        add_values()
+        self:add_line(";end)")
+    else
+        add_values()
+    end
+
+    self:add_line(";")
 end
 
 function StatementRule:IfStatement(node)
@@ -465,14 +496,7 @@ function ExpressionRule:FunctionExpression(node)
     end
 
     self:add_line("function(")
-
-    comma_sep_list(node.params, function(_node, last)
-        self:expr_emit(_node)
-        if not last then
-            self:add_line(",")
-        end
-    end)
-
+    self:expr_list(node.params)
     self:add_line(")")
 
     check_params(self, node.params, "function")
@@ -629,11 +653,8 @@ function SELF:expr_emit(node)
 end
 
 function SELF:expr_list(exps)
-    comma_sep_list(exps, function(node, last)
-        self:expr_emit(node)
-        if not last then
-            self:add_line(",")
-        end
+    comma_sep_list(self, exps, function(v)
+        self:expr_emit(v)
     end)
 end
 

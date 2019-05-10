@@ -41,7 +41,7 @@ local parse_expr, parse_expr_list, parse_binop_expr, parse_unop_expr, parse_prim
 
 local parse_stmt, parse_if_stmt, parse_do_stmt, parse_while_stmt, parse_for_stmt,
     parse_foreach_stmt, parse_let_stmt, parse_return_stmt, parse_break_stmt, parse_continue_stmt,
-    parse_label_stmt, parse_goto_stmt, parse_func_stmt, parse_class_stmt
+    parse_label_stmt, parse_goto_stmt, parse_func_stmt, parse_class_stmt, parse_use_stmt
 
 local self
 function parse(s)
@@ -209,7 +209,7 @@ function parse_primary_expr(is_async)
         if is_async then self:error(async_error_msg, self.lastline) end
 
         self.await = true
-        return "call", ast.await_expr(parse_expr())
+        return ast.await_expr(parse_expr()), "call"
     else
         if is_async then self:error(async_error_msg) end
         self:error("unexpected symbol " .. peek())
@@ -444,6 +444,7 @@ function parse_stmt()
             [Keyword.Goto] = parse_goto_stmt,
             [Keyword.Fn] = parse_func_stmt,
             [Keyword.Class] = parse_class_stmt,
+            [Keyword.Use] = parse_use_stmt,
             [Keyword.Enum] = function()
                 self:error("Enum is not implemented yet")
             end
@@ -729,6 +730,41 @@ function parse_class_stmt(is_local)
     expect(Token.RBrace)
 
     return ast.class_decl(c_ident, c_body, is_local)
+end
+
+function parse_use_stmt()
+    self:next()
+
+    local with_update = false
+    if consume(Op.Not) then
+        with_update = true
+    end
+
+    local ident = parse_ident()
+
+    while next_is(Op.Dot) do
+        ident = parse_field_expr(ident)
+    end
+
+    local locals
+    if consume(Token.Colon) then
+        expect(Token.LBrace)
+        locals = {}
+
+        while not next_is(Token.RBrace) do
+            table.insert(locals, parse_ident());
+
+            if not consume(Token.Comma) then
+                break
+            end
+        end
+
+        expect(Token.RBrace)
+    end
+
+    expect(Token.Semicolon)
+
+    return ast.use_stmt(ident, locals, with_update)
 end
 
 function parse_args()

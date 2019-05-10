@@ -1,0 +1,42 @@
+do {
+    let fn call(tbl, callbacks) {
+        for i = 1, #callbacks {
+            callbacks[i](tbl);
+        }
+    }
+
+    fn Lau.__USE__(tbl, callback) {
+        if !istable(tbl) {
+            return error("invalid table to import from");
+        }
+
+        let old_meta = getmetatable(tbl);
+        if old_meta && old_meta.LAU {
+            table.insert(old_meta.LAU, callback);
+            call(tbl, old_meta.LAU);
+            return;
+        }
+
+        let meta = {}; if !old_meta {
+            setmetatable(tbl, meta);
+        } else {
+            meta = old_meta;
+        }
+
+        let callbacks = {callback};
+        meta.LAU = callbacks;
+
+        let old_newindex = old_meta && old_meta.__newindex;
+        fn meta:__newindex(k, v) {
+            if old_newindex == nil {
+                rawset(self, k, v);
+            } else {
+                old_newindex(self, k, v);
+            }
+
+            call(self, callbacks);
+        }
+
+        call(tbl, callbacks);
+    }
+}
