@@ -1,25 +1,22 @@
 Lau = {}
 
 Lau.Modules = {
-    colon_call  = {
-        pos = 1,
+    {
+        name = "colon_call",
         "__CALL__"
     },
-    use = {
-        pos = 2,
-        "__USE__"
-    },
-    async = {
-        pos = 3,
+    {
+        name = "async",
         "__ASYNC__"
     },
-    await = {
+    {
+        name = "promise",
+        "Promise"
+    },
+    {
+        name = "await",
         "__AWAIT__",
         "await_failed"
-    },
-    promise = {
-        pos = 4,
-        "Promise"
     }
 }
 
@@ -31,7 +28,7 @@ if CLIENT then
         include(name)
     end
 
-    for k, v in SortedPairsByMemberValue(Lau.Modules, "pos") do
-        Lau.RunFile("lau/modules/" .. k .. ".lau")
+    for k, v in ipairs(Lau.Modules) do
+        Lau.RunFile("lau/modules/" .. v.name .. ".lau")
     end
 end

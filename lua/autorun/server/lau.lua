@@ -190,7 +190,9 @@ function Lau.CompileDir(name, main_file)
 end
 
 do
-    for k, v in SortedPairsByMemberValue(Lau.Modules, "pos") do
+    for k, v in ipairs(Lau.Modules) do
+        k = v.name
+
         local locals = ""
         for _, v2 in ipairs(v) do
             locals = locals .. "local " .. v2 .. "=Lau." .. v2 .. ";"

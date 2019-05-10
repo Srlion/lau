@@ -764,8 +764,6 @@ function parse_use_stmt()
             end
         end
 
-        local update = consume(Op.Not)
-
         if locals and #locals == 0 then
             continue
         end
@@ -776,8 +774,7 @@ function parse_use_stmt()
 
         table.insert(uses, {
             ident  = ident,
-            locals = locals,
-            update = update
+            locals = locals
         })
     until not (consume(Token.Comma))
 

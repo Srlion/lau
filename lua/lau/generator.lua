@@ -138,7 +138,11 @@ local function should_replace(v)
 end
 
 local function get_name(name)
-    return Lau.Modules[name][1]
+    for k, v in ipairs(Lau.Modules) do
+        if v.name == name then
+            return v[1]
+        end
+    end
 end
 
 local StatementRule = {}
