@@ -740,30 +740,44 @@ function parse_use_stmt()
     repeat
         local ident = parse_ident()
 
+        local locals
         while next_is(Op.Dot) do
-            ident = parse_field_expr(ident)
+            self:next()
+
+            local key = self.token
+            if consume(Token.LBrace) then
+                locals = {}
+
+                while not next_is(Token.RBrace) do
+                    table.insert(locals, parse_ident());
+
+                    if not consume(Token.Comma) then
+                        break
+                    end
+                end
+
+                expect(Token.RBrace)
+
+                break
+            else
+                ident = ast.expr_property(ident, parse_ident())
+            end
         end
 
-        local locals
-        if consume(Token.Colon) then
-            expect(Token.LBrace)
-            locals = {}
+        local update = consume(Op.Not)
 
-            while not next_is(Token.RBrace) do
-                table.insert(locals, parse_ident());
+        if locals and #locals == 0 then
+            continue
+        end
 
-                if not consume(Token.Comma) then
-                    break
-                end
-            end
-
-            expect(Token.RBrace)
+        if not locals and ident.kind == "MemberExpression" then
+            ident, locals = ident.object, {ident.property}
         end
 
         table.insert(uses, {
             ident  = ident,
             locals = locals,
-            with_update = consume(Op.Not)
+            update = update
         })
     until not (consume(Token.Comma))
 

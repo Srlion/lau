@@ -2,9 +2,7 @@ do {
     let unpack = unpack;
     let select = select;
 
-    let table_maxn = table.maxn;
     let coroutine_resume  = coroutine.resume;
-    let coroutine_yield   = coroutine.yield;
     let coroutine_running = coroutine.running;
     let coroutine_create  = coroutine.create;
 
@@ -15,6 +13,8 @@ do {
     /*
         aff will fix it later
     */
+    // let table_maxn = table.maxn;
+    // let coroutine_yield   = coroutine.yield;
     // let count, cached = 0, {};
     // let fn get_coroutine(func, ...) {
     //     let status, rets_n, rets;

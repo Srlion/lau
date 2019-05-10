@@ -39,7 +39,7 @@ function AST.class_decl(name, body, is_local)
     })
 end
 
-function AST.use_stmt(uses)
+function AST.use_stmt(uses, update_uses)
     return build("UseStatement", {uses = uses})
 end
 

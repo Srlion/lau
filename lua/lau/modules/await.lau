@@ -8,8 +8,8 @@ do {
     }
 
     let AWAIT_FAILED = {
-        __tostring: () => {
-            "await error: " .. tostring(self.err)
+        __tostring: (s) => {
+            "await error: " .. tostring(s.err)
         }
     };
 

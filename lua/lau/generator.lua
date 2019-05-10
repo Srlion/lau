@@ -125,12 +125,16 @@ local ReplacedKeyword = table_to_true({
     "end", "then", "elseif", "repeat", "until", "not", "or", "function"
 })
 
-local CHANGE_KEYWORD = true
 local function should_replace(v)
-    if ReplacedKeyword[v.value] then
-        CHANGE_KEYWORD = false
+    local value = v.value
+
+    if ReplacedKeyword[value] then
+        v.value = "\"" .. value .. "\""
+        v.no_change = true
         return true
     end
+
+    return false
 end
 
 local function get_name(name)
@@ -226,10 +230,9 @@ function StatementRule:ClassDeclaration(node)
         end
 
         if should_replace(id) then
-            id.new_value = "[\"" .. name .. "\"]"
-            CHANGE_KEYWORD = true
+            id.value = "[" .. id.value .. "]"
         else
-            id.new_value = "." .. name
+            id.value = "." .. name
         end
 
         if v.ctor then
@@ -278,64 +281,41 @@ end
 
 function StatementRule:UseStatement(node)
     local uses = node.uses
-    for i = 1, #uses do
-        node = uses[i]
 
-        local ident = node.ident
-        local locals = node.locals
+    self:add_line("local ")
 
-        if not locals and ident.kind == "MemberExpression" then
-            ident, locals = ident.object, {ident.property}
-        end
-
-        local add_locals = function()
-            if locals then
-                self:expr_list(locals)
-            else
-                self:expr_emit(ident)
-            end
-        end
-
-        local add_values = function()
-            self:add_line("=")
-
-            if locals then
-                comma_sep_list(self, locals, function(v)
-                    self:expr_emit(ident)
-                    self:add_line("[\"" .. v.value .. "\"]", v.line)
-                end)
-            else
-                self:expr_emit(ident)
-            end
-        end
-
-        local with_update = node.with_update
-        self:add_line("local ")
-        add_locals()
-
-        if with_update then
-            if not locals then
-                self:add_line("=")
-                self:expr_emit(ident)
-            end
-
-            self:add_line(";")
-            self:add_line(get_name("use") .. "(")
-            self:expr_emit(ident)
-            self:add_line(",function(t)")
-            add_locals()
-            ident = {
-                kind = "Text",
-                text = "t"
-            }
-            add_values()
-            self:add_line(";end)")
+    comma_sep_list(self, uses, function(v)
+        local locals = v.locals
+        if locals then
+            self:expr_list(locals)
         else
-            add_values()
+            self:expr_emit(v.ident)
         end
+    end)
 
-        self:add_line(";")
-    end
+    self:add_line("=")
+
+    comma_sep_list(self, uses, function(v)
+        local ident  = v.ident
+        local locals = v.locals
+        if locals then
+            comma_sep_list(self, locals, function(v)
+                self:expr_emit(ident)
+                if should_replace(v) then
+                    self:add_line("[")
+                    self:expr_emit(v)
+                    self:add_line("]")
+                else
+                    self:add_line(".")
+                    self:expr_emit(v)
+                end
+            end)
+        else
+            self:expr_emit(ident)
+        end
+    end)
+
+    self:add_line(";")
 end
 
 function StatementRule:IfStatement(node)
@@ -482,8 +462,8 @@ function ExpressionRule:ParenthesesExpression(node)
 end
 
 function ExpressionRule:Identifier(node)
-    local v = node.new_value or node.value
-    if CHANGE_KEYWORD and ReplacedKeyword[v] then
+    local v = node.value
+    if not node.no_change and ReplacedKeyword[v] then
         v = "​" .. v
     end
     self:add_line(v, node.line)
@@ -527,10 +507,9 @@ function ExpressionRule:MemberExpression(node)
         self:expr_emit(prop)
         self:add_line("]")
     elseif should_replace(prop) then
-        self:add_line("[\"", prop.line)
+        self:add_line("[")
         self:expr_emit(prop)
-        self:add_line("\"]")
-        CHANGE_KEYWORD = true
+        self:add_line("]")
     else
         self:add_line(".")
         self:expr_emit(prop)
@@ -574,10 +553,9 @@ function ExpressionRule:TableExpression(node)
         local key, val = kv[1], kv[2]
         if key then
             if should_replace(key) then
-                self:add_line("[\"", key.line)
+                self:add_line("[")
                 self:expr_emit(key)
-                self:add_line("\"]=")
-                CHANGE_KEYWORD = true
+                self:add_line("]=")
             elseif key.key == "Ident" then
                 self:expr_emit(key)
                 self:add_line("=")
@@ -618,8 +596,12 @@ function ExpressionRule:SendExpression(node)
     if should_replace(method) then
         self:add_line(get_name("colon_call") .. "(")
         self:expr_emit(node.receiver)
-        self:add_line(",\"" .. method.value .. "\",", method.line)
-        CHANGE_KEYWORD = true
+        self:add_line(",")
+        self:expr_emit(method)
+
+        if args then
+            self:add_line(",")
+        end
     else
         self:expr_emit(node.receiver)
         self:add_line(":")
@@ -714,7 +696,10 @@ local function generate(tree, no_lines)
         return " "
     end
 
-    return concat(self.code)
+    local code = concat(self.code)
+    code = code:gsub("[ \t]+%f[\r\n%z]", "") // remove leading whitespaces
+
+    return code
 end
 
 return generate
