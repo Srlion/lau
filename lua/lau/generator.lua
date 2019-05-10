@@ -277,55 +277,65 @@ function StatementRule:ClassDeclaration(node)
 end
 
 function StatementRule:UseStatement(node)
-    local ident = node.ident
-    local locals = node.locals
+    local uses = node.uses
+    for i = 1, #uses do
+        node = uses[i]
 
-    if not locals and ident.kind == "MemberExpression" then
-        ident, locals = ident.object, {ident.property}
-    end
+        local ident = node.ident
+        local locals = node.locals
 
-    local add_locals = function()
-        if locals then
-            self:expr_list(locals)
-        else
-            self:expr_emit(ident)
+        if not locals and ident.kind == "MemberExpression" then
+            ident, locals = ident.object, {ident.property}
         end
-    end
 
-    local add_values = function()
-        self:add_line("=")
-
-        if locals then
-            comma_sep_list(self, locals, function(v)
+        local add_locals = function()
+            if locals then
+                self:expr_list(locals)
+            else
                 self:expr_emit(ident)
-                self:add_line("[\"" .. v.value .. "\"]", v.line)
-            end)
-        else
-            self:expr_emit(ident)
+            end
         end
-    end
 
-    local with_update = node.with_update
-    self:add_line("local ")
-    add_locals()
+        local add_values = function()
+            self:add_line("=")
 
-    if with_update then
-        self:add_line(";")
-        self:add_line(get_name("use") .. "(")
-        self:expr_emit(ident)
-        self:add_line(",function(t)")
+            if locals then
+                comma_sep_list(self, locals, function(v)
+                    self:expr_emit(ident)
+                    self:add_line("[\"" .. v.value .. "\"]", v.line)
+                end)
+            else
+                self:expr_emit(ident)
+            end
+        end
+
+        local with_update = node.with_update
+        self:add_line("local ")
         add_locals()
-        ident = {
-            kind = "Text",
-            text = "t"
-        }
-        add_values()
-        self:add_line(";end)")
-    else
-        add_values()
-    end
 
-    self:add_line(";")
+        if with_update then
+            if not locals then
+                self:add_line("=")
+                self:expr_emit(ident)
+            end
+
+            self:add_line(";")
+            self:add_line(get_name("use") .. "(")
+            self:expr_emit(ident)
+            self:add_line(",function(t)")
+            add_locals()
+            ident = {
+                kind = "Text",
+                text = "t"
+            }
+            add_values()
+            self:add_line(";end)")
+        else
+            add_values()
+        end
+
+        self:add_line(";")
+    end
 end
 
 function StatementRule:IfStatement(node)

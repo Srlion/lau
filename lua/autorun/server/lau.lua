@@ -2,7 +2,7 @@ if _G[debug.getinfo(1).short_src] then return end _G[debug.getinfo(1).short_src]
 
 require("gaceio")
 
-print("\n\n\n\n\n\n\n\n\n\n\n-----------------------------------")
+-- print("\n\n\n\n\n\n\n\n\n\n\n-----------------------------------")
 
 local function handle_error(fn, ...)
     local status, v = pcall(fn, ...)

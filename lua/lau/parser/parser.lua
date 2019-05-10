@@ -735,36 +735,41 @@ end
 function parse_use_stmt()
     self:next()
 
-    local with_update = false
-    if consume(Op.Not) then
-        with_update = true
-    end
+    local uses = {}
 
-    local ident = parse_ident()
+    repeat
+        local ident = parse_ident()
 
-    while next_is(Op.Dot) do
-        ident = parse_field_expr(ident)
-    end
-
-    local locals
-    if consume(Token.Colon) then
-        expect(Token.LBrace)
-        locals = {}
-
-        while not next_is(Token.RBrace) do
-            table.insert(locals, parse_ident());
-
-            if not consume(Token.Comma) then
-                break
-            end
+        while next_is(Op.Dot) do
+            ident = parse_field_expr(ident)
         end
 
-        expect(Token.RBrace)
-    end
+        local locals
+        if consume(Token.Colon) then
+            expect(Token.LBrace)
+            locals = {}
+
+            while not next_is(Token.RBrace) do
+                table.insert(locals, parse_ident());
+
+                if not consume(Token.Comma) then
+                    break
+                end
+            end
+
+            expect(Token.RBrace)
+        end
+
+        table.insert(uses, {
+            ident  = ident,
+            locals = locals,
+            with_update = consume(Op.Not)
+        })
+    until not (consume(Token.Comma))
 
     expect(Token.Semicolon)
 
-    return ast.use_stmt(ident, locals, with_update)
+    return ast.use_stmt(uses)
 end
 
 function parse_args()

@@ -39,12 +39,8 @@ function AST.class_decl(name, body, is_local)
     })
 end
 
-function AST.use_stmt(ident, locals, with_update)
-    return build("UseStatement", {
-        ident  = ident,
-        locals = locals,
-        with_update = with_update
-    })
+function AST.use_stmt(uses)
+    return build("UseStatement", {uses = uses})
 end
 
 function AST.expr_unop(op, v)
