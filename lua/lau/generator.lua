@@ -31,7 +31,7 @@ local function comma_sep_list(self, t, f)
     for i = 1, n do
         f(t[i])
 
-        if i != n then
+        if i ~= n then
             self:add_line(",")
         end
     end
@@ -70,14 +70,14 @@ local function check_params(self, params, func_name)
             continue
         end
 
-        self:add_line("if(")
+        self:add_line("if ")
 
         if type then
             type = type.value
 
             local is_type = is_types[type:lower()]
             if is_type then
-                self:add_line("!" .. is_type .. "(")
+                self:add_line("not " .. is_type .. "(")
                 self:expr_emit(param)
                 self:add_line(")")
                 type = is_type:sub(3)
@@ -85,10 +85,10 @@ local function check_params(self, params, func_name)
                 type = types_to_replace[type:lower()] or type
                 self:add_line("type(")
                 self:expr_emit(param)
-                self:add_line(")!=\"" .. type .. "\"")
+                self:add_line(")~=\"" .. type .. "\"")
             end
 
-            self:add_line(")then ")
+            self:add_line(" then ")
 
             if value then
                 goto VALUE
@@ -250,7 +250,7 @@ function StatementRule:ClassDeclaration(node)
 
             local last_stmt = body[#body]
 
-            if not last_stmt or last_stmt.kind != "ReturnStatement" then
+            if not last_stmt or last_stmt.kind ~= "ReturnStatement" then
                 table.insert(body, {
                     kind = "Text",
                     text = "return self;"
@@ -268,7 +268,7 @@ function StatementRule:ClassDeclaration(node)
                 local body = v.body
                 local last_stmt = body[#body]
 
-                if not last_stmt or last_stmt.kind != "ReturnStatement" then
+                if not last_stmt or last_stmt.kind ~= "ReturnStatement" then
                     table.insert(body, {
                         kind = "Text",
                         text = "return self;"
@@ -358,7 +358,7 @@ end
 function StatementRule:DoWhileStatement(node)
     self:add_line("repeat ")
     self:list_emit(node.body)
-    self:add_line("until!(")
+    self:add_line("until not(")
     self:expr_emit(node.cond)
     self:add_line(")")
 end
@@ -426,7 +426,7 @@ end
 function StatementRule:LabelStatement(node)
     self:add_line("::", node.label.line)
     self:expr_emit(node.label)
-    self:add_line("::;")
+    self:add_line("::")
 end
 
 function StatementRule:GotoStatement(node)
@@ -468,7 +468,7 @@ end
 function ExpressionRule:Identifier(node)
     local v = node.value
     if not node.no_change and ReplacedKeyword[v] then
-        v = "​" .. v
+        v = "​" --[[invisible character]] .. v
     end
     self:add_line(v, node.line)
 end
@@ -525,8 +525,17 @@ function ExpressionRule:Vararg(node)
 end
 
 function ExpressionRule:BinaryExpression(node)
-    local oper = tostring(node.operator)
-    oper = strsub(oper, 2, #oper - 1)
+    local oper = node.operator
+    if oper == Op.Ne then
+        oper = "~="
+    elseif oper == Op.LAnd then
+        oper = " and "
+    elseif oper == Op.LOr then
+        oper = " or "
+    else
+        oper = tostring(oper)
+        oper = strsub(oper, 2, #oper - 1)
+    end
 
     self:expr_emit(node.left)
     self:add_line(oper)
@@ -535,8 +544,13 @@ end
 ExpressionRule.LogicalExpression = ExpressionRule.BinaryExpression
 
 function ExpressionRule:UnaryExpression(node)
-    local oper = tostring(node.operator)
-    oper = strsub(oper, 2, #oper - 1)
+    local oper = node.operator
+    if oper == Op.Not then
+        oper = " not "
+    else
+        oper = tostring(oper)
+        oper = strsub(oper, 2, #oper - 1)
+    end
 
     self:add_line(oper)
     self:expr_emit(node.argument)
@@ -702,6 +716,7 @@ local function generate(tree, no_lines)
 
     local code = concat(self.code)
     code = code:gsub("[ \t]+%f[\r\n%z]", "") // remove leading whitespaces
+    code = code:gsub(" +", " ") // remove multiple spaces
 
     return code
 end

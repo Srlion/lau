@@ -132,8 +132,7 @@ function Lau.CompileFile(main_file, dir)
         error(string.format("(Lau) File '%s' doesn't exist.", main_file), 2)
     end
 
-    local code = Lau.RunFile(main_file, true)
-    if not code then code = " " end
+    local code = Lau.RunFile(main_file, true, nil, true)
 
     main_file = "lua/" .. main_file:StripExtension() .. ".lua"
 
