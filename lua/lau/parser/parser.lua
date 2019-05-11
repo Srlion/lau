@@ -614,7 +614,6 @@ function parse_label_stmt()
 
     local label = parse_ident()
     expect(Token.Label)
-    expect(Token.Semicolon)
 
     return ast.label_stmt(label)
 end

@@ -424,7 +424,7 @@ function StatementRule:ContinueStatement(node)
 end
 
 function StatementRule:LabelStatement(node)
-    self:add_line("::")
+    self:add_line("::", node.label.line)
     self:expr_emit(node.label)
     self:add_line("::;")
 end

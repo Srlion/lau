@@ -404,7 +404,7 @@ local function llex(ls)
         elseif s == "true" or s == "false" then
             s = Literal.Bool(s)
         elseif s == "nil" then
-            s = Literal.Nil
+            s = Literal.Nil()
         else
             s = Token.Ident(s)
         end
