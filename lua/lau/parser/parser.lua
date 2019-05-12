@@ -212,7 +212,9 @@ function parse_primary_expr(is_async)
         return ast.await_expr(parse_expr()), "call"
     else
         if is_async then self:error(async_error_msg) end
-        self:error("unexpected symbol " .. peek())
+        self:error(
+            format("expected expression, got '%s'", peek())
+        )
     end
 
     ::REPEAT::
@@ -222,10 +224,14 @@ function parse_primary_expr(is_async)
     if token == Op.Dot then
         self:next()
 
-        if not next_is_in{Literal, Token.Ident} or next_is(Literal.Nil) then
+        if not next_is_in{Literal, Token.Ident} then
             self:error(
                 format("unexpected %s, expected <key>", peek())
             )
+        end
+
+        if next_is(Literal.Nil) then
+            self:error("can't index a table with 'nil'")
         end
 
         local key = peek()
@@ -295,12 +301,6 @@ function parse_simple_expr()
         if is_async then self:error(async_error_msg) end
 
         return parse_table_expr()
-    elseif token == Keyword.Fn then
-        self:next()
-
-        local params, body = parse_body()
-
-        return ast.expr_function(body, params, is_async)
     else
         return parse_primary_expr(is_async)
     end
@@ -338,18 +338,17 @@ function parse_table_expr()
         local token = self.token
         if token == Token.LBracket then
             if self:lookahead() == Literal.Nil then
-                self:error("unexpected 'nil' key")
+                self:error("can't use 'nil' as a key in tables")
             end
 
             key = parse_bracket_expr()
             expect(Token.Colon)
         elseif is_literal(token) or token == Token.Ident then
-            if token == Literal.Nil then
-                self:error("unexpected 'nil' key")
-            end
-
-
             if self:lookahead() == Token.Colon then
+                if token == Literal.Nil then
+                    self:error("can't use 'nil' as a key in tables")
+                end
+
                 self:next()
                 self:next()
 
