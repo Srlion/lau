@@ -1,3 +1,6 @@
+/*
+    this is really shit code that needs to be changed
+*/
 Lau = {}
 
 Lau.Modules = {
@@ -45,6 +48,17 @@ if CLIENT then
     for k, v in ipairs(Lau.Modules) do
         Lau.RunFile("lau/modules/" .. v.name .. ".lau")
     end
+
+    timer.Simple(0, function()
+        net.Receive("Lau.Refresh_Client_File", function()
+            print("HI THERE")
+            local file_name = net.ReadString()
+            local code = net.ReadData(net.ReadUInt(32))
+            code = util.Decompress(code)
+
+            RunString(code, file_name)
+        end)
+    end)
 
     return
 end
@@ -95,24 +109,41 @@ local function ext_lua(name)
 end
 
 local add_tracked_file; do
-    local time = file.Time
-
     local tracked_files = {}
     function add_tracked_file(file_name, cl)
-        tracked_files[file_name] = {time(file_name, "LUA"), cl}
+        for k, v in ipairs(tracked_files) do
+            if v[1] == file_name and cl == v[3] then
+                return
+            end
+        end
+        table.insert(tracked_files, {file_name, file.Time(file_name, "LUA"), cl})
     end
 
-    timer.Create("Lau.ReloadFiles", 0.2, 0, function()
-        for name, v in pairs(tracked_files) do
+    local time = file.Time
+    util.AddNetworkString("Lau.Refresh_Client_File")
+    timer.Create("Lau.ReloadFiles", 0.1, 0, function()
+        for i = 1, #tracked_files do
+            local v = tracked_files[i]
+            local name = v[1]
+
             local last_update = time(name, "LUA")
-            if v[1] ~= last_update then
-                if v[2] then
-                    Lau.AddCLFile(name)
+            if last_update == 0 then continue end
+
+            if v[2] ~= last_update then
+                if v[3] then
+                    local code = Lau.RunFile(name, true)
+                    code = util.Compress(code)
+
+                    net.Start("Lau.Refresh_Client_File")
+                        net.WriteString(name)
+                        net.WriteUInt(#code, 32)
+                        net.WriteData(code, #code)
+                    net.Send(player.GetAll())
                 else
                     Lau.RunFile(name)
                 end
 
-                v[1] = last_update
+                v[2] = last_update
             end
         end
     end)
@@ -162,8 +193,8 @@ function Lau.AddCLFile(file_name)
 
     gaceio.Write(full_path, code)
     AddCSLuaFile(ext_lua(file_name))
-    gaceio.Delete(full_path)
 
+    gaceio.Delete(full_path)
     add_tracked_file(file_name, true)
 end
 
