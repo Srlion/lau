@@ -141,6 +141,8 @@ local add_tracked_file, update_tracked_file; do
                 if v[3] then
                     timer.Create("Lau.Refresh_Client_File" .. name, 0.2, 1, function()
                         local code = Lau.RunFile(name, true)
+                        if not code then return end
+
                         code = util.Compress(code)
 
                         net.Start("Lau.Refresh_Client_File")

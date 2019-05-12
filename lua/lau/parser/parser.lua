@@ -213,7 +213,7 @@ function parse_primary_expr(is_async)
     else
         if is_async then self:error(async_error_msg) end
         self:error(
-            format("expected expression, got '%s'", peek())
+            format("expected expression near %s", peek())
         )
     end
 
