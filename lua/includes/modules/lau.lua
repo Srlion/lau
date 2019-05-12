@@ -51,7 +51,6 @@ if CLIENT then
 
     timer.Simple(0, function()
         net.Receive("Lau.Refresh_Client_File", function()
-            print("HI THERE")
             local file_name = net.ReadString()
             local code = net.ReadData(net.ReadUInt(32))
             code = util.Decompress(code)
@@ -108,7 +107,7 @@ local function ext_lua(name)
     return StripExtension(name) .. ".lua"
 end
 
-local add_tracked_file; do
+local add_tracked_file, update_tracked_file; do
     local tracked_files = {}
     function add_tracked_file(file_name, cl)
         for k, v in ipairs(tracked_files) do
@@ -119,9 +118,18 @@ local add_tracked_file; do
         table.insert(tracked_files, {file_name, file.Time(file_name, "LUA"), cl})
     end
 
+    function update_tracked_file(file_name)
+        for k, v in ipairs(tracked_files) do
+            if v[1] == file_name then
+                v[2] = 0
+                return true
+            end
+        end
+    end
+
     local time = file.Time
     util.AddNetworkString("Lau.Refresh_Client_File")
-    timer.Create("Lau.ReloadFiles", 0.1, 0, function()
+    timer.Create("Lau.ReloadFiles", 0.5, 0, function()
         for i = 1, #tracked_files do
             local v = tracked_files[i]
             local name = v[1]
@@ -131,14 +139,16 @@ local add_tracked_file; do
 
             if v[2] ~= last_update then
                 if v[3] then
-                    local code = Lau.RunFile(name, true)
-                    code = util.Compress(code)
+                    timer.Create("Lau.Refresh_Client_File" .. name, 0.2, 1, function()
+                        local code = Lau.RunFile(name, true)
+                        code = util.Compress(code)
 
-                    net.Start("Lau.Refresh_Client_File")
-                        net.WriteString(name)
-                        net.WriteUInt(#code, 32)
-                        net.WriteData(code, #code)
-                    net.Send(player.GetAll())
+                        net.Start("Lau.Refresh_Client_File")
+                            net.WriteString(name)
+                            net.WriteUInt(#code, 32)
+                            net.WriteData(code, #code)
+                        net.Send(player.GetAll())
+                    end)
                 else
                     Lau.RunFile(name)
                 end
@@ -190,6 +200,10 @@ function Lau.AddCLFile(file_name)
 
     full_path = "garrysmod/" .. full_path
     full_path = ext_lua(full_path)
+
+    if update_tracked_file(file_name) then
+        return
+    end
 
     gaceio.Write(full_path, code)
     AddCSLuaFile(ext_lua(file_name))
