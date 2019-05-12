@@ -94,7 +94,7 @@ local function check_params(self, params, func_name)
                 goto VALUE
             end
 
-            self:add_line(format(bad_argument_message, i, func_name, type, param.value))
+            self:add_line(format(bad_argument_message, i, func_name:gsub("%.", ""), type, param.value))
         else
             self:expr_emit(param)
             self:add_line("==")
@@ -158,13 +158,15 @@ end
 ExpressionRule.Text = StatementRule.Text
 
 function StatementRule:FunctionDeclaration(node)
+    local id = node.id
+
     if node.locald then
         self:add_line("local ")
-        self:expr_emit(node.id)
+        self:expr_emit(id)
         self:add_line(";")
     end
 
-    self:expr_emit(node.id)
+    self:expr_emit(id)
     self:add_line("=")
 
     if node.is_async then
@@ -175,7 +177,14 @@ function StatementRule:FunctionDeclaration(node)
     self:expr_list(node.params)
     self:add_line(")")
 
-    check_params(self, node.params, node.id.value)
+    local func_name
+    if id.kind == "MemberExpression" then
+        func_name = id.property.value
+    else
+        func_name = id.value
+    end
+
+    check_params(self, node.params, func_name)
 
     self:add_section(node.body, node.is_async)
 
