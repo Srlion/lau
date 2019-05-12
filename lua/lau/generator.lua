@@ -195,9 +195,22 @@ function StatementRule:ClassDeclaration(node)
 
     local class_iden = node.name
 
-    self:expr_emit(node.name)
-    self:add_line("={class={};};local class_meta={__index=")
+    --[[
+        class_name = class_name or {
+            class = {}
+        }
 
+        local class_meta = {
+            __index = class_name.class
+        }
+    ]]
+
+    self:expr_emit(node.name)
+    self:add_line("=")
+    self:expr_emit(node.name)
+    self:add_line(" or ")
+    self:add_line("{class={}};")
+    self:add_line("local class_meta={__index=")
     self:expr_emit(node.name)
     self:add_line(".class};")
 

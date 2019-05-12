@@ -703,13 +703,9 @@ function parse_class_stmt(is_local)
             local params, body = parse_body(true)
             local method = ast.function_decl(false, ident, body, params, is_async, is_static)
 
-            if ident.value == "new" then
+            if ident.value == "new" and not is_static then
                 if ctor then
                     self:error("duplicate constructor definition for class " .. ident)
-                end
-
-                if is_static then
-                    self:error(format("constructor for %s is marked 'static'", ident))
                 end
 
                 ctor = true

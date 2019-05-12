@@ -31,11 +31,12 @@ function AST.function_decl(locald, id, body, params, is_async, is_static)
     })
 end
 
-function AST.class_decl(name, body, is_local)
+function AST.class_decl(name, body, is_local, all_static)
     return build("ClassDeclaration", {
         name     = name,
         body     = body,
-        is_local = is_local
+        is_local = is_local,
+        all_static = all_static
     })
 end
 
