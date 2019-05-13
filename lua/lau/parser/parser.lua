@@ -342,6 +342,8 @@ function parse_table_expr()
             end
 
             key = parse_bracket_expr()
+            key.bracketed = true
+
             expect(Token.Colon)
         elseif is_literal(token) or token == Token.Ident then
             if self:lookahead() == Token.Colon then

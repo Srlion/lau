@@ -592,18 +592,14 @@ function ExpressionRule:TableExpression(node)
         local kv = node.keyvals[i]
         local key, val = kv[1], kv[2]
         if key then
-            if should_replace(key) then
+            if should_replace(key) or key.bracketed or key.key ~= "Ident" then
                 self:add_line("[")
                 self:expr_emit(key)
-                self:add_line("]=")
-            elseif key.key == "Ident" then
+                self:add_line("]")
+            elseif key.key == "Ident" and not key.bracketed then
                 self:expr_emit(key)
-                self:add_line("=")
-            else
-                self:add_line("[")
-                self:expr_emit(key)
-                self:add_line("]=")
             end
+            self:add_line("=")
             self:expr_emit(val)
         else
             self:expr_emit(val)
