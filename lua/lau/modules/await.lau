@@ -1,24 +1,23 @@
 do {
-    let coroutine_running = coroutine.running;
-    let coroutine_resume  = coroutine.resume;
-    let coroutine_yield   = coroutine.yield;
+    use coroutine.{running, resume, yield};
 
-    let fn Error(err) {
-        MsgC(Color(137, 222, 255), "[ERROR] ", err, "\n");
+    let fn resolve(co, value) {
+        let status, err = resume(co, value);
+        if status == false {
+            error(err);
+        }
     }
 
-    let AWAIT_FAILED = {
-        __tostring: (s) => {
-            "await error: " .. tostring(s.err)
-        }
-    };
+    let fn promise_resolve(self, value) {
+        resolve(self.co, value);
+    }
 
-    let await_failed_index = {
-        __index: AWAIT_FAILED
-    };
+    let fn promise_reject(self, err) {
+        resolve(self.co, setmetatable({err: err}, await_failed_index));
+    }
 
     fn Lau.__AWAIT__(promise) {
-        let co = coroutine_running();
+        let co = running();
         if !co {
             error("await can only be used in async functions", 2);
         }
@@ -27,19 +26,20 @@ do {
             promise = Promise.resolve(promise);
         }
 
-        promise:next(val => {
-            let status, err = coroutine_resume(co, val);
-            if status == false {
-                Error(err);
+        let state = promise.state;
+        if state != "Pending" {
+            if state == "Fulfilled" {
+                return promise.value;
+            } else {
+                return setmetatable({err: promise.value}, await_failed_index);
             }
-        }, err => {
-            let status, err = coroutine_resume(co, setmetatable({err: err}, await_failed_index));
-            if status == false {
-                Error(err);
-            }
-        });
+        }
 
-        return coroutine_yield();
+        promise.co = co;
+        promise.resolve = promise_resolve;
+        promise.reject  = promise_reject;
+
+        return yield();
     }
 
     let getmetatable = getmetatable;

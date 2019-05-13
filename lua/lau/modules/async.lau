@@ -1,10 +1,7 @@
 do {
-    let unpack = unpack;
-    let select = select;
-
-    let coroutine_resume  = coroutine.resume;
-    let coroutine_running = coroutine.running;
-    let coroutine_create  = coroutine.create;
+    use select,
+        unpack,
+        coroutine.{resume, running, create};
 
     let fn pack(...) {
         return select("#", ...), {...};
@@ -59,18 +56,23 @@ do {
 
     fn Lau.__ASYNC__(func) {
         ... => {
-            if coroutine_running() {
+            if running() {
                 return func(...);
             } else {
                 let rets_n, rets = pack(
-                    coroutine_resume(
-                        coroutine_create(func),
+                    resume(
+                        create(func),
                         ...
                     )
                 );
 
                 if !rets[1] {
-                    error(rets[2], 0);
+                    let err_msg = rets[2];
+                    if !err_msg:match("^.-:%d+: ") {
+                        error(err_msg:gsub("^.-:%d+: ", ""), 2);
+                    } else {
+                        error(err_msg, 0);
+                    }
                 } else {
                     return unpack(rets, 2, rets_n);
                 }
