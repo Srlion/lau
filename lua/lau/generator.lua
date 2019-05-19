@@ -407,25 +407,49 @@ function StatementRule:ForEachStatement(node)
     do
         local first_exp = node.exps[1]
         if first_exp.kind == "CallExpression" and first_exp.callee.value == "ipairs" and #node.vars == 2 then
+            local table_name, in_do; do
+                local t = first_exp.arguments[1]
+                if t.kind == "Identifier" then
+                    table_name = {
+                        kind = "Text",
+                        text = t.value
+                    }
+                else
+                    table_name = {
+                        kind = "Text",
+                        text = "__t__"
+                    }
+                    in_do = true
+                end
+            end
+
             local key, value = node.vars[1], node.vars[2]
 
-            self:add_line("do local __t__=")
-            self:expr_emit(first_exp.arguments[1])
-            self:add_line(";for ")
+            if in_do then
+                self:add_line("do local __t__=")
+                self:expr_emit(first_exp.arguments[1])
+                self:add_line(";")
+            end
+
+            self:add_line("for ")
             self:expr_emit(node.vars[1])
-            self:add_line("=1,#__t__ do local ")
+            self:add_line("=1,#")
+            self:expr_emit(table_name)
+            self:add_line(" do local ")
             self:expr_emit(value)
-            self:add_line(",")
+            self:add_line("=")
+            self:expr_emit(table_name)
+            self:add_line("[")
             self:expr_emit(key)
-            self:add_line("=__t__[")
-            self:expr_emit(key)
-            self:add_line("],")
-            self:expr_emit(key)
+            self:add_line("]")
             self:add_line(";if not ")
             self:expr_emit(value)
             self:add_line(" then break;end;")
             self:add_section(node.body)
-            self:add_line("end;")
+
+            if in_do then
+                self:add_line("end;")
+            end
 
             return
         end
