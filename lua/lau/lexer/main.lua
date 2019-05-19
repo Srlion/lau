@@ -449,7 +449,7 @@ local function llex(ls)
             read_long_comment(ls)
             goto CONTINUE
         end
-        return Op.Div -- ("/")
+        return Op.Div, true -- ("/")
     elseif current == ':' then
         if nextchar(ls) == ":" then
             return Token.Label -- ("::")

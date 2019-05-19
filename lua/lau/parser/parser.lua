@@ -39,9 +39,11 @@ local parse_expr, parse_expr_list, parse_binop_expr, parse_unop_expr, parse_prim
     parse_simple_expr, parse_field_expr, parse_bracket_expr,
     parse_table_expr, parse_arrow_func_expr
 
-local parse_stmt, parse_if_stmt, parse_do_stmt, parse_while_stmt, parse_for_stmt,
-    parse_foreach_stmt, parse_let_stmt, parse_return_stmt, parse_break_stmt, parse_continue_stmt,
-    parse_label_stmt, parse_goto_stmt, parse_func_stmt, parse_class_stmt, parse_use_stmt
+local parse_stmt, parse_if_stmt, parse_do_stmt, parse_while_stmt,
+    parse_for_stmt, parse_foreach_stmt, parse_fornum_stmt,
+    parse_let_stmt, parse_return_stmt, parse_break_stmt,
+    parse_continue_stmt, parse_label_stmt, parse_goto_stmt,
+    parse_func_stmt, parse_class_stmt, parse_use_stmt
 
 local self
 function parse(s)
@@ -437,7 +439,6 @@ function parse_stmt()
             [Keyword.Do] = parse_do_stmt,
             [Keyword.While] = parse_while_stmt,
             [Keyword.For] = parse_for_stmt,
-            [Keyword.ForEach] = parse_foreach_stmt,
             [Keyword.Return] = parse_return_stmt,
             [Keyword.Break] = parse_break_stmt,
             [Keyword.Continue] = parse_continue_stmt,
@@ -520,14 +521,26 @@ function parse_for_stmt()
     self:next()
 
     local var = parse_ident()
-    expect(Op.Assign)
+
+    local token = self.token
+    if token == Op.Assign then
+        return parse_fornum_stmt(var)
+    elseif token == Token.Comma or Keyword.In then
+        return parse_foreach_stmt(var)
+    else
+        self:error("expected '=' or 'in' near " .. token)
+    end
+end
+
+function parse_fornum_stmt(var)
+    self:next() -- skip '='
 
     local init = parse_expr()
     expect(Token.Comma)
 
     local last = parse_expr()
-    local step
 
+    local step
     if consume(Token.Comma) then
         step = parse_expr()
     end
@@ -537,14 +550,12 @@ function parse_for_stmt()
     return ast.for_stmt(var, init, last, step, body)
 end
 
-function parse_foreach_stmt()
-    self:next()
+function parse_foreach_stmt(var)
+    local vars = {var}
 
-    local vars = {}
-
-    repeat
+    while consume(Token.Comma) do
         vars[#vars + 1] = parse_ident()
-    until not consume(Token.Comma)
+    end
 
     expect(Keyword.In)
 

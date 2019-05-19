@@ -99,7 +99,7 @@ local function check_params(self, params, func_name)
             self:expr_emit(param)
             self:add_line("==")
             self:add_line("nil")
-            self:add_line(")then ")
+            self:add_line(" then ")
         end
 
         ::VALUE::
