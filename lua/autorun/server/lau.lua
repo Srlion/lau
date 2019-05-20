@@ -1,4 +1,13 @@
-require("Lau")
+local old_include = include
+local includes = {}
+
+function include(f, delay)
+    if not delay then
+        return old_include(f)
+    else
+        table.insert(includes, f)
+    end
+end
 
 do
     local SV, CL, SH = 1, 2, 3
@@ -23,4 +32,9 @@ do
     load_dir("autorun", SH)
     load_dir("autorun/server", SV)
     load_dir("autorun/client", CL)
+end
+
+include = old_include
+for k, v in ipairs(includes) do
+    include(v)
 end

@@ -403,6 +403,121 @@ function StatementRule:ForStatement(node)
     self:add_section(node.body)
 end
 
+
+-- local loops_n = 0
+-- local function get_label(k)
+--     return k .. "_" .. loops_n
+-- end
+-- function StatementRule:ForEachStatement(node)
+--     do
+--         local first_exp = node.exps[1]
+--         if first_exp.kind == "CallExpression" and first_exp.callee.value == "ipairs" and #node.vars == 2 then
+--             -- do
+--             --     local i, table_n = 0, #table
+--             --     ::__for_begin__::
+--             --     i = i + 1;
+--             --     if i <= table_n then
+--             --          local v, i, table_n = table[i], i;
+--             --          if v == nil then
+--             --              goto __for_break__;
+--             --          end
+
+--             --          <body>
+
+--             --          goto __for_begin__;
+--             --     end
+--             --     ::__for_break__::
+--             -- end
+
+--             self:add_line("do ")
+--             loops_n = loops_n + 1
+
+--             local LOOP, BREAK = get_label("__for_begin__"), get_label("__for_break__")
+
+--             local table_name; do
+--                 local t = first_exp.arguments[1]
+--                 if t.kind == "Identifier" then
+--                     table_name = {
+--                         kind = "Text",
+--                         text = t.value
+--                     }
+--                 else
+--                     table_name = {
+--                         kind = "Text",
+--                         text = "__t__"
+--                     }
+--                     self:add_line("local __t__=")
+--                     self:expr_emit(t)
+--                     self:add_line(";")
+--                 end
+--             end
+
+--             local key, value = key, node.vars[2]
+
+--             self:add_line("local")
+--             self:expr_emit(node.vars[1])
+--             self:add_line(",__t__n=0,#")
+--             self:expr_emit(table_name)
+
+--             self:add_line("::" .. LOOP .. "::")
+
+--             self:expr_emit(key)
+--             self:add_line("=")
+--             self:expr_emit(key)
+--             self:add_line("+1;")
+
+--             self:add_line("if ")
+--             self:expr_emit(key)
+--             self:add_line("<=__t__n then")
+
+--             self:add_line("local ")
+--             self:expr_emit(value)
+--             self:add_line(",")
+--             self:expr_emit(key)
+--             self:add_line(",")
+--             self:add_line("__t__n")
+--             self:add_line("=")
+--             self:expr_emit(table_name)
+--             self:add_line("[")
+--             self:expr_emit(key)
+--             self:add_line("]")
+--             self:add_line(",")
+--             self:expr_emit(key)
+--             self:add_line(";")
+
+--             self:add_line("if ")
+--             self:expr_emit(value)
+--             self:add_line("==")
+--             self:add_line("nil")
+--             self:add_line(" then ")
+--             self:add_line("goto ")
+--             self:add_line(BREAK)
+--             self:add_line(";")
+--             self:add_line("end;")
+
+--             self:list_emit(node.body)
+
+--             self:add_line("goto ")
+--             self:add_line(LOOP)
+--             self:add_line(";")
+
+--             self:add_line("end")
+--             self:add_line(";")
+
+--             loops_n = loops_n - 1
+
+--             return
+--         end
+--     end
+
+--     self:add_line("for ")
+--     self:expr_list(node.vars)
+--     self:add_line(" in ")
+--     self:expr_list(node.exps)
+--     self:add_line(" do ")
+--     self:add_section(node.body)
+-- end
+
 function StatementRule:ForEachStatement(node)
     do
         local first_exp = node.exps[1]
@@ -442,9 +557,9 @@ function StatementRule:ForEachStatement(node)
             self:add_line("[")
             self:expr_emit(key)
             self:add_line("]")
-            self:add_line(";if not ")
+            self:add_line(";if ")
             self:expr_emit(value)
-            self:add_line(" then break;end;")
+            self:add_line("==nil then break;end;")
             self:add_section(node.body)
 
             if in_do then
