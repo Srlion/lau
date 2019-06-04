@@ -296,6 +296,8 @@ function StatementRule:ClassDeclaration(node)
                         text = "return self;"
                     })
                 end
+            else
+                table.remove(v.params, 1)
             end
 
             self:emit(v)
@@ -821,12 +823,6 @@ end
 function StatementRule:DoStatement(node)
     self:add_line("do ")
     self:add_section(node.body)
-end
-
-function ExpressionRule:AwaitExpression(node)
-    self:add_line(get_name("await") .. "(")
-    self:expr_emit(node.expression)
-    self:add_line(")")
 end
 
 local SELF = {}

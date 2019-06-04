@@ -9,7 +9,6 @@ local KEYWORD, Keyword = enum(
 )
 
 Keyword("Async")
-Keyword("Await")
 Keyword("Class")
 Keyword("Else")
 Keyword("Enum")

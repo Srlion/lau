@@ -217,10 +217,6 @@ function AST.assignment_expr(op, vars, exps)
     })
 end
 
-function AST.await_expr(expr)
-    return build("AwaitExpression", {expression = expr})
-end
-
 function AST.chunk(body, chunkname)
     return build("Chunk", {
         body = body,

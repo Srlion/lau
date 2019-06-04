@@ -15,11 +15,6 @@ Lau.Modules = {
     {
         name = "promise",
         "Promise"
-    },
-    {
-        name = "await",
-        "__AWAIT__",
-        "await_failed"
     }
 }
 

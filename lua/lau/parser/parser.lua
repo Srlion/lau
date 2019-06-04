@@ -9,23 +9,6 @@ local Literal = lexer.Literal
 local Op = lexer.Op
 local Token = lexer.Token
 
-
-local function value_to_key(tbl)
-    for k, v in ipairs(tbl) do
-        tbl[v], tbl[k] = true, nil
-    end
-end
-
-local function has_value(t, v)
-    for i = 1, #t do
-        if t[i] == v then
-            return true
-        end
-    end
-
-    return false
-end
-
 local function is_literal(v)
     return Literal[v.key] and true or false
 end
@@ -45,33 +28,31 @@ local parse_stmt, parse_if_stmt, parse_do_stmt, parse_while_stmt,
     parse_continue_stmt, parse_label_stmt, parse_goto_stmt,
     parse_func_stmt, parse_class_stmt, parse_use_stmt
 
-local self
+local Self
 function parse(s)
-    self = s
-    self.varargs = true
-    self.has_await = false
-    self.old_has_await = {}
+    Self = s
+    Self.varargs = true
 
     local tree = {}
     local stmt, is_last = nil, false
 
-    while not is_last and self.token ~= Token.EOF do
+    while not is_last and Self.token ~= Token.EOF do
         stmt, is_last = parse_stmt()
         tree[#tree + 1] = stmt
     end
 
-    if self.token ~= Token.EOF then
+    if Self.token ~= Token.EOF then
         expect(Token.EOF)
     end
 
-    return ast.chunk(tree, self.chunkname)
+    return ast.chunk(tree, Self.chunkname)
 end
 
 function consume(value)
-    local token = self.token
+    local token = Self.token
 
     if token == value then
-        self:next()
+        Self:next()
         return token
     end
 
@@ -79,22 +60,22 @@ function consume(value)
 end
 
 function expect(expected)
-    if self.token == expected then
-        self:next()
+    if Self.token == expected then
+        Self:next()
         return true
     else
-        self:error(format("expected %s", expected), self.lastline)
+        Self:error(format("expected %s", expected), Self.lastline)
     end
 end
 
 function next_is(expected)
-    local token = self.token
+    local token = Self.token
 
     return token == expected
 end
 
 function next_is_in(possibilities)
-    local token = self.token
+    local token = Self.token
 
     for i = 1, #possibilities do
         local v = possibilities[i]
@@ -112,23 +93,16 @@ function next_is_in(possibilities)
 end
 
 function peek()
-    local token = self.token
+    local token = Self.token
 
     -- print("\n----------------")
     -- PrintType(debug.getinfo(2))
 
     if token == Token.EOF then
-        self:error("unexpected EOF")
+        Self:error("unexpected EOF")
     else
         return token
     end
-end
-
-local function self_save(name, new)
-    local old = self[name]
-    self[name] = new
-
-    return old
 end
 
 --[[
@@ -156,10 +130,10 @@ local left_priority = operator.left_priority
 local right_priority = operator.right_priority
 function parse_binop_expr(limit)
     local v  = parse_unop_expr()
-    local op = self.token
+    local op = Self.token
 
     while is_binop(op) and left_priority(op) > limit do
-        self:next()
+        Self:next()
 
         local v2, nextop = parse_binop_expr(right_priority(op))
         v = ast.expr_binop(op, v, v2)
@@ -170,10 +144,10 @@ function parse_binop_expr(limit)
 end
 
 function parse_unop_expr()
-    local tk = self.token
+    local tk = Self.token
 
     if tk == Op.Not or tk == Op.Sub or tk == Op.Len then
-        self:next()
+        Self:next()
         local v = parse_binop_expr(operator.unary_priority)
 
         return ast.expr_unop(tk, v)
@@ -192,9 +166,9 @@ function parse_primary_expr(is_async)
             return arrow_func
         end
 
-        if is_async then self:error(async_error_msg) end
+        if is_async then Self:error(async_error_msg) end
 
-        self:next()
+        Self:next()
 
         local expr = parse_expr()
         expect(Token.RParens)
@@ -206,38 +180,33 @@ function parse_primary_expr(is_async)
             return parse_arrow_func_expr(v, nil, is_async)
         end
 
-        if is_async then self:error(async_error_msg, self.lastline) end
-    elseif consume(Keyword.Await) then
-        if is_async then self:error(async_error_msg, self.lastline) end
-
-        self.await = true
-        return ast.await_expr(parse_expr()), "call"
+        if is_async then Self:error(async_error_msg, Self.lastline) end
     else
-        if is_async then self:error(async_error_msg) end
-        self:error(
+        if is_async then Self:error(async_error_msg) end
+        Self:error(
             format("expected expression near %s", peek())
         )
     end
 
     ::REPEAT::
 
-    local token = self.token
+    local token = Self.token
 
     if token == Op.Dot then
-        self:next()
+        Self:next()
 
         if not next_is_in{Literal, Token.Ident} then
-            self:error(
+            Self:error(
                 format("unexpected %s, expected <key>", peek())
             )
         end
 
         if next_is(Literal.Nil) then
-            self:error("can't index a table with 'nil'")
+            Self:error("can't index a table with 'nil'")
         end
 
         local key = peek()
-        self:next()
+        Self:next()
 
         if key == Token.Ident then
             v = ast.expr_property(v, ast.identifier(key))
@@ -250,7 +219,7 @@ function parse_primary_expr(is_async)
         local key = parse_bracket_expr()
         vk, v = "indexed", ast.expr_index(v, key)
     elseif token == Token.Colon then
-        self:next()
+        Self:next()
 
         local key = parse_ident()
         local args = parse_args()
@@ -270,50 +239,50 @@ function parse_primary_expr(is_async)
 end
 
 function parse_simple_expr()
-    local token = self.token
+    local token = Self.token
     if not token then
-        self:error("expected expression", self.lastline)
+        Self:error("expected expression", Self.lastline)
     end
 
     local is_async
     if token == Keyword.Async then
         is_async = true
-        token = self:next()
+        token = Self:next()
     end
 
     if is_literal(token) then
-        if is_async then self:error(async_error_msg) end
+        if is_async then Self:error(async_error_msg) end
 
-        self:next()
+        Self:next()
 
         return ast.literal(token)
     elseif token == Op.Ellipsis then
-        if self:next() == Token.Arrow then
+        if Self:next() == Token.Arrow then
             return parse_arrow_func_expr(ast.expr_vararg(), true, is_async)
         end
 
-        if is_async then self:error(async_error_msg) end
+        if is_async then Self:error(async_error_msg) end
 
-        if not self.varargs then
-            self:error("cannot use '...' outside a vararg function", self.lastline)
+        if not Self.varargs then
+            Self:error("cannot use '...' outside a vararg function", Self.lastline)
         end
 
         return ast.expr_vararg()
     elseif token == Token.LBrace then
-        if is_async then self:error(async_error_msg) end
+        if is_async then Self:error(async_error_msg) end
 
         return parse_table_expr()
     else
         return parse_primary_expr(is_async)
     end
 
-    self:next()
+    Self:next()
 
     return e
 end
 
 function parse_field_expr(v)
-    self:next()
+    Self:next()
 
     local key = parse_ident()
 
@@ -321,7 +290,7 @@ function parse_field_expr(v)
 end
 
 function parse_bracket_expr()
-    self:next()
+    Self:next()
 
     local v = parse_expr()
     expect(Token.RBracket)
@@ -337,10 +306,10 @@ function parse_table_expr()
     while not next_is(Token.RBrace) do
         local key, val
 
-        local token = self.token
+        local token = Self.token
         if token == Token.LBracket then
-            if self:lookahead() == Literal.Nil then
-                self:error("can't use 'nil' as a key in tables")
+            if Self:lookahead() == Literal.Nil then
+                Self:error("can't use 'nil' as a key in tables")
             end
 
             key = parse_bracket_expr()
@@ -348,13 +317,13 @@ function parse_table_expr()
 
             expect(Token.Colon)
         elseif is_literal(token) or token == Token.Ident then
-            if self:lookahead() == Token.Colon then
+            if Self:lookahead() == Token.Colon then
                 if token == Literal.Nil then
-                    self:error("can't use 'nil' as a key in tables")
+                    Self:error("can't use 'nil' as a key in tables")
                 end
 
-                self:next()
-                self:next()
+                Self:next()
+                Self:next()
 
                 key = ast.literal(token)
             end
@@ -377,14 +346,15 @@ function parse_table_expr()
 end
 
 function parse_arrow_func_expr(name, vararg, is_async)
-    local reset = self:fake_llex()
+    local reset = Self:fake_llex()
     local params
 
-    local o_varargs = self_save("varargs", false)
-    local o_await = self_save("await", false)
+    local old_varargs = Self.varargs
 
     if vararg then
-        self.varargs = true
+        Self.varargs = true
+    else
+        Self.varargs = false
     end
 
     if not name then
@@ -403,7 +373,7 @@ function parse_arrow_func_expr(name, vararg, is_async)
 
         return false
     else
-        local token, body = self:next()
+        local token, body = Self:next()
 
         if token == Token.LBrace then
             body = parse_block()
@@ -416,8 +386,7 @@ function parse_arrow_func_expr(name, vararg, is_async)
             }
         end
 
-        self_save("varargs", o_varargs)
-        self_save("await", o_await)
+        Self.varargs = old_varargs
 
         return ast.expr_function(body, params, is_async)
     end
@@ -448,14 +417,14 @@ function parse_stmt()
             [Keyword.Class] = parse_class_stmt,
             [Keyword.Use] = parse_use_stmt,
             [Keyword.Enum] = function()
-                self:error("Enum is not implemented yet")
+                Self:error("Enum is not implemented yet")
             end
         }
 
         main_statements = {Keyword.Fn, Keyword.Class, Keyword.Enum}
     end
 
-    local token = self.token
+    local token = Self.token
     local statement = statements[token]
 
     if is_async and token ~= Keyword.Fn then
@@ -476,7 +445,7 @@ function parse_stmt()
 end
 
 function parse_if_stmt()
-    self:next()
+    Self:next()
 
     local cond = parse_expr()
     local body = parse_block()
@@ -494,22 +463,15 @@ function parse_if_stmt()
 end
 
 function parse_do_stmt()
-    self:next()
+    Self:next()
 
     local body = parse_block()
-
-    if consume(Keyword.While) then
-        local cond = parse_expr()
-        expect(Token.Semicolon)
-
-        return ast.do_while_stmt(cond, body)
-    end
 
     return ast.do_stmt(body)
 end
 
 function parse_while_stmt()
-    self:next()
+    Self:next()
 
     local cond = parse_expr()
     local body =  parse_block()
@@ -518,22 +480,22 @@ function parse_while_stmt()
 end
 
 function parse_for_stmt()
-    self:next()
+    Self:next()
 
     local var = parse_ident()
 
-    local token = self.token
+    local token = Self.token
     if token == Op.Assign then
         return parse_fornum_stmt(var)
     elseif token == Token.Comma or Keyword.In then
         return parse_foreach_stmt(var)
     else
-        self:error("expected '=' or 'in' near " .. token)
+        Self:error("expected '=' or 'in' near " .. token)
     end
 end
 
 function parse_fornum_stmt(var)
-    self:next() -- skip '='
+    Self:next() -- skip '='
 
     local init = parse_expr()
     expect(Token.Comma)
@@ -574,13 +536,13 @@ function parse_let_stmt()
 
     local exps
 
-    local token = self.token
+    local token = Self.token
     if token ~= Token.Semicolon then
         if token ~= Op.Assign then
             expect(Token.Semicolon)
         end
 
-        self:next()
+        Self:next()
         exps = parse_expr_list()
     end
 
@@ -590,7 +552,7 @@ function parse_let_stmt()
 end
 
 function parse_return_stmt()
-    self:next()
+    Self:next()
 
     local exps
 
@@ -604,8 +566,8 @@ function parse_return_stmt()
 end
 
 function parse_break_stmt()
-    local line = self.linenumber
-    self:next()
+    local line = Self.linenumber
+    Self:next()
 
     expect(Token.Semicolon)
 
@@ -613,8 +575,8 @@ function parse_break_stmt()
 end
 
 function parse_continue_stmt()
-    local line = self.linenumber
-    self:next()
+    local line = Self.linenumber
+    Self:next()
 
     expect(Token.Semicolon)
 
@@ -622,7 +584,7 @@ function parse_continue_stmt()
 end
 
 function parse_label_stmt()
-    self:next()
+    Self:next()
 
     local label = parse_ident()
     expect(Token.Label)
@@ -631,7 +593,7 @@ function parse_label_stmt()
 end
 
 function parse_goto_stmt()
-    self:next()
+    Self:next()
 
     local label = parse_ident()
     expect(Token.Semicolon)
@@ -640,7 +602,7 @@ function parse_goto_stmt()
 end
 
 function parse_func_stmt(is_local, is_async)
-    self:next()
+    Self:next()
 
     local v = parse_ident()
 
@@ -662,7 +624,7 @@ function parse_func_stmt(is_local, is_async)
 end
 
 function parse_class_stmt(is_local)
-    self:next()
+    Self:next()
 
     local c_ident = parse_ident()
 
@@ -690,20 +652,20 @@ function parse_class_stmt(is_local)
 
         if token == Keyword.Static then
             is_static = true
-            token = self:next()
+            token = Self:next()
         end
 
         if token == Keyword.Async then
             is_async = true
-            self:next()
+            Self:next()
         end
 
         local ident = parse_ident()
         token = peek()
 
         if token == Op.Assign then
-            if is_async then self:error(async_error_msg, self.lastline) end
-            self:next()
+            if is_async then Self:error(async_error_msg, Self.lastline) end
+            Self:next()
 
             ident.field = true
             ident.is_static = is_static
@@ -718,7 +680,7 @@ function parse_class_stmt(is_local)
 
             if ident.value == "new" and not is_static then
                 if ctor then
-                    self:error("duplicate constructor definition for class " .. ident)
+                    Self:error("duplicate constructor definition for class " .. ident)
                 end
 
                 ctor = true
@@ -728,8 +690,8 @@ function parse_class_stmt(is_local)
                 table.insert(c_body, method)
             end
         else
-            self:error(
-                format("unexpected %s in class", self.token)
+            Self:error(
+                format("unexpected %s in class", Self.token)
             )
         end
     end
@@ -740,7 +702,7 @@ function parse_class_stmt(is_local)
 end
 
 function parse_use_stmt()
-    self:next()
+    Self:next()
 
     local uses = {}
 
@@ -749,9 +711,8 @@ function parse_use_stmt()
 
         local locals
         while next_is(Op.Dot) do
-            self:next()
+            Self:next()
 
-            local key = self.token
             if consume(Token.LBrace) then
                 locals = {}
 
@@ -791,12 +752,12 @@ function parse_use_stmt()
 end
 
 function parse_args()
-    local line = self.lastline
+    local line = Self.lastline
 
     expect(Token.LParens)
 
-    if line ~= self.lastline then
-        self:error("ambiguous syntax (function call x new statement)")
+    if line ~= Self.lastline then
+        Self:error("ambiguous syntax (function call x new statement)")
     end
 
     local args
@@ -810,15 +771,13 @@ function parse_args()
 end
 
 function parse_body(needself)
-    local o_varargs = self_save("varargs", false)
-    local o_await = self_save("await", false)
+    local old_varargs = Self.varargs
+    Self.varargs = false
 
     local params = parse_params(needself)
-
     local body = parse_block()
 
-    self_save("varargs", o_varargs)
-    self_save("await", o_await)
+    Self.varargs = old_varargs
 
     return params, body
 end
@@ -827,12 +786,12 @@ function parse_block()
     expect(Token.LBrace)
     local body = {}
 
-    local token = self.token
+    local token = Self.token
     local stmt, is_last = nil, false
     while not is_last and token ~= Token.EOF and token ~= Token.RBrace do
         stmt, is_last = parse_stmt()
         body[#body + 1] = stmt
-        token = self.token
+        token = Self.token
     end
 
     expect(Token.RBrace)
@@ -863,10 +822,10 @@ function parse_assignment(vlist, var, vk)
         local op = assignments_ops[token]
 
         if not op then
-            self:error("expected assignment", self.lastline)
+            Self:error("expected assignment", Self.lastline)
         end
 
-        self:next()
+        Self:next()
 
         local exps = parse_expr_list()
         expect(Token.Semicolon)
@@ -878,7 +837,6 @@ end
 local call_expressions = {
     CallExpression  = 1,
     SendExpression  = 1,
-    AwaitExpression = 1
 }
 
 function parse_call_assign()
@@ -895,7 +853,7 @@ function parse_call_assign()
     elseif token ~= Token.Semicolon then
         return ast.return_stmt({var}), true
     else
-        self:error("expected statement")
+        Self:error("expected statement")
     end
 end
 
@@ -925,10 +883,10 @@ function parse_params(needself)
                 end
             elseif consume(Op.Ellipsis) then
                 args[#args + 1] = ast.expr_vararg()
-                self.varargs = true
+                Self.varargs = true
                 break
             else
-                self:error("expected 'argument<name>'")
+                Self:error("expected 'argument<name>'")
             end
         until not consume(Token.Comma)
     end
@@ -939,13 +897,13 @@ function parse_params(needself)
 end
 
 function parse_ident(expected)
-    local token = self.token
+    local token = Self.token
     if token == Token.Ident then
-        self:next()
+        Self:next()
 
         return ast.identifier(token)
     else
-        self:error(format("unexpected %s, expected %s", token, expected or "identifier"))
+        Self:error(format("unexpected %s, expected %s", token, expected or "identifier"))
     end
 end
 

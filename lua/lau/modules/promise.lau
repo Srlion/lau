@@ -1,7 +1,7 @@
 // Thanks to https://github.com/bluejava/zousan && https://github.com/hjmmc/lua-promise lol
 do {
-    let pcall = pcall;
-    let isfunction = isfunction;
+    use pcall, isfunction,
+        coroutine.{running, resume, yield};
 
     let PENDING   = "Pending";
     let FULFILLED = "Fulfilled";
@@ -34,6 +34,24 @@ do {
             }
         } else {
             client.promise:reject(reason);
+        }
+    }
+
+    let await_resolve, await_reject;
+    do {
+        let fn resolve(co, value) {
+            let status, err = resume(co, value);
+            if status == false {
+                error(err);
+            }
+        }
+
+        fn await_resolve(self, value) {
+            resolve(self.co, value);
+        }
+
+        fn await_reject(self, err) {
+            resolve(self.co, {await_error: err});
         }
     }
 
@@ -111,7 +129,7 @@ do {
                 return;
             }
 
-            if Promise:is_promise(value) {
+            if Promise.is_promise(value) {
                 let first = true;
                 value:next(value => {
                     if first {
@@ -203,6 +221,32 @@ do {
 
         tostring() {
             "Promise <" .. self.state .. ">"
+        }
+
+        await() {
+            let co = running();
+            if !co {
+                error("await can only be used in async functions", 2);
+            }
+
+            let state = self.state;
+            if state != "Pending" {
+                if state == "Fulfilled" {
+                    return self.value;
+                } else {
+                    return {await_error: self.value};
+                }
+            }
+
+            self.co = co;
+            self.resolve = await_resolve;
+            self.reject  = await_reject;
+
+            return yield();
+        }
+
+        static await_failed(v) {
+            istable(v) && v.await_error != nil
         }
     }
 
