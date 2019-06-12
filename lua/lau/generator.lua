@@ -127,13 +127,11 @@ local ReplacedKeyword = table_to_true({
 
 local function should_replace(v)
     local value = v.value
-
-    if ReplacedKeyword[value] then
+    if ReplacedKeyword[value] and v.key == "Ident" then
         v.value = "\"" .. value .. "\""
         v.no_change = true
         return true
     end
-
     return false
 end
 
@@ -658,7 +656,7 @@ end
 function ExpressionRule:Identifier(node)
     local v = node.value
     if not node.no_change and ReplacedKeyword[v] then
-        v = "​" --[[invisible character]] .. v
+        v = v .. "​" --[[invisible character]]
     end
     self:add_line(v, node.line)
 end
